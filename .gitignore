@@ -1,0 +1,36 @@
+# Binaries
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test output
+cov.out
+*.test
+
+# Environment
+.env
+
+# MySQL data volume
+data/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Go workspace
+vendor/
+
+# Docker
+*.log
+
+AGENTS.md
