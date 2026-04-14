@@ -12,7 +12,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/mindflow/agri-platform/internal/config"
+	"github.com/mindflow/agri-platform/pkg/handlers"
+	"github.com/mindflow/agri-platform/pkg/middleware"
 	"github.com/mindflow/agri-platform/pkg/models"
+	"github.com/mindflow/agri-platform/pkg/services"
 	"gorm.io/gorm"
 )
 
@@ -27,7 +30,7 @@ func main() {
 		log.Fatalf("init db: %v", err)
 	}
 
-	router := setupRouter(db)
+	router := setupRouter(db, cfg)
 
 	srv := &http.Server{
 		Addr:         ":" + cfg.ServerPort,
@@ -57,12 +60,27 @@ func main() {
 	log.Println("server exited")
 }
 
-func setupRouter(db *gorm.DB) *gin.Engine {
+func setupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery())
 
 	r.GET("/health", healthHandler(db))
+
+	// Services
+	authSvc := services.NewAuthService(db, cfg.JWTSecret)
+
+	// Handlers
+	authH := handlers.NewAuthHandler(authSvc)
+
+	// Auth routes (public)
+	v1 := r.Group("/v1")
+	auth := v1.Group("/auth")
+	{
+		auth.POST("/register", authH.Register)
+		auth.POST("/login", authH.Login)
+		auth.GET("/me", middleware.AuthMiddleware(authSvc), authH.Me)
+	}
 
 	return r
 }
