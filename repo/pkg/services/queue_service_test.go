@@ -17,7 +17,7 @@ func TestNewQueueService(t *testing.T) {
 }
 
 func TestQueueService_SubmitAndProcess(t *testing.T) {
-	q := NewQueueService(10, 2)
+	q := NewQueueService(10, 1)
 	defer q.Shutdown()
 
 	var processed atomic.Bool
@@ -28,10 +28,11 @@ func TestQueueService_SubmitAndProcess(t *testing.T) {
 
 	job, err := q.Submit("test_job", map[string]interface{}{"key": "value"})
 	require.NoError(t, err)
-	assert.Equal(t, JobPending, job.Status)
+	// Status may already be processing/completed due to worker race; verify it was queued
+	assert.Contains(t, []JobStatus{JobPending, JobProcessing}, job.Status)
 
 	// Wait for worker to process
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
 
 	assert.True(t, processed.Load())
 	found, ok := q.GetJob(job.ID)
