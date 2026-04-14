@@ -9,7 +9,10 @@ import (
 	"gorm.io/gorm"
 )
 
-var ErrPlotNotFound = errors.New("plot not found")
+var (
+	ErrPlotNotFound  = errors.New("plot not found")
+	ErrPlotForbidden = errors.New("not authorized to access this plot")
+)
 
 type PlotService struct {
 	db *gorm.DB
@@ -102,7 +105,7 @@ func (s *PlotService) List(ctx context.Context, p PlotListParams) (*PaginatedPlo
 	}, nil
 }
 
-func (s *PlotService) GetByID(ctx context.Context, id uint) (*models.Plot, error) {
+func (s *PlotService) GetByID(ctx context.Context, id, userID uint, role string) (*models.Plot, error) {
 	var plot models.Plot
 	if err := s.db.WithContext(ctx).First(&plot, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -110,16 +113,25 @@ func (s *PlotService) GetByID(ctx context.Context, id uint) (*models.Plot, error
 		}
 		return nil, fmt.Errorf("get plot: %w", err)
 	}
+	// Object-level ownership check: only owner or admin can access
+	if role != "admin" && plot.UserID != userID {
+		return nil, ErrPlotForbidden
+	}
 	return &plot, nil
 }
 
-func (s *PlotService) Update(ctx context.Context, id uint, in UpdatePlotInput) (*models.Plot, error) {
+func (s *PlotService) Update(ctx context.Context, id, userID uint, role string, in UpdatePlotInput) (*models.Plot, error) {
 	var plot models.Plot
 	if err := s.db.WithContext(ctx).First(&plot, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrPlotNotFound
 		}
 		return nil, fmt.Errorf("find plot: %w", err)
+	}
+
+	// Object-level ownership check: only owner or admin can update
+	if role != "admin" && plot.UserID != userID {
+		return nil, ErrPlotForbidden
 	}
 
 	updates := make(map[string]interface{})
@@ -148,13 +160,22 @@ func (s *PlotService) Update(ctx context.Context, id uint, in UpdatePlotInput) (
 	return &plot, nil
 }
 
-func (s *PlotService) Delete(ctx context.Context, id uint) error {
-	res := s.db.WithContext(ctx).Delete(&models.Plot{}, id)
-	if res.Error != nil {
-		return fmt.Errorf("delete plot: %w", res.Error)
+func (s *PlotService) Delete(ctx context.Context, id, userID uint, role string) error {
+	var plot models.Plot
+	if err := s.db.WithContext(ctx).First(&plot, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrPlotNotFound
+		}
+		return fmt.Errorf("find plot: %w", err)
 	}
-	if res.RowsAffected == 0 {
-		return ErrPlotNotFound
+
+	// Object-level ownership check: only owner or admin can delete
+	if role != "admin" && plot.UserID != userID {
+		return ErrPlotForbidden
+	}
+
+	if err := s.db.WithContext(ctx).Delete(&models.Plot{}, id).Error; err != nil {
+		return fmt.Errorf("delete plot: %w", err)
 	}
 	return nil
 }

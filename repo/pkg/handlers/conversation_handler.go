@@ -40,10 +40,16 @@ func (h *ConversationHandler) GetOrder(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid order id"})
 		return
 	}
-	order, err := h.convSvc.GetOrder(c.Request.Context(), uint(id))
+	userID, _ := c.Get("user_id")
+	role, _ := c.Get("role")
+	order, err := h.convSvc.GetOrder(c.Request.Context(), uint(id), userID.(uint), role.(string))
 	if err != nil {
 		if errors.Is(err, services.ErrOrderNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "order not found"})
+			return
+		}
+		if errors.Is(err, services.ErrOrderForbidden) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "not authorized to access this order"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get order"})
@@ -74,6 +80,7 @@ func (h *ConversationHandler) ListOrders(c *gin.Context) {
 
 func (h *ConversationHandler) PostMessage(c *gin.Context) {
 	userID, _ := c.Get("user_id")
+	role, _ := c.Get("role")
 	orderID, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid order id"})
@@ -86,7 +93,7 @@ func (h *ConversationHandler) PostMessage(c *gin.Context) {
 		return
 	}
 
-	conv, err := h.convSvc.PostMessage(c.Request.Context(), uint(orderID), userID.(uint), in)
+	conv, err := h.convSvc.PostMessage(c.Request.Context(), uint(orderID), userID.(uint), role.(string), in)
 	if err != nil {
 		if errors.Is(err, services.ErrRateLimitExceeded) {
 			c.JSON(http.StatusTooManyRequests, gin.H{"error": err.Error()})
@@ -98,6 +105,10 @@ func (h *ConversationHandler) PostMessage(c *gin.Context) {
 		}
 		if errors.Is(err, services.ErrOrderNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "order not found"})
+			return
+		}
+		if errors.Is(err, services.ErrOrderForbidden) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "not authorized to access this order"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to post message"})
@@ -114,11 +125,17 @@ func (h *ConversationHandler) ListMessages(c *gin.Context) {
 		return
 	}
 
+	userID, _ := c.Get("user_id")
+	role, _ := c.Get("role")
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
 
-	msgs, total, err := h.convSvc.ListMessages(c.Request.Context(), uint(orderID), page, pageSize)
+	msgs, total, err := h.convSvc.ListMessages(c.Request.Context(), uint(orderID), userID.(uint), role.(string), page, pageSize)
 	if err != nil {
+		if errors.Is(err, services.ErrOrderForbidden) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "not authorized to access this order"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list messages"})
 		return
 	}
@@ -149,6 +166,7 @@ func (h *ConversationHandler) MarkRead(c *gin.Context) {
 
 func (h *ConversationHandler) TransferTicket(c *gin.Context) {
 	userID, _ := c.Get("user_id")
+	role, _ := c.Get("role")
 	orderID, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid order id"})
@@ -161,10 +179,14 @@ func (h *ConversationHandler) TransferTicket(c *gin.Context) {
 		return
 	}
 
-	conv, err := h.convSvc.TransferTicket(c.Request.Context(), uint(orderID), userID.(uint), in)
+	conv, err := h.convSvc.TransferTicket(c.Request.Context(), uint(orderID), userID.(uint), role.(string), in)
 	if err != nil {
 		if errors.Is(err, services.ErrOrderNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "order not found"})
+			return
+		}
+		if errors.Is(err, services.ErrOrderForbidden) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "not authorized to access this order"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to transfer ticket"})
@@ -202,6 +224,7 @@ func (h *ConversationHandler) ListTemplates(c *gin.Context) {
 
 func (h *ConversationHandler) SendTemplate(c *gin.Context) {
 	userID, _ := c.Get("user_id")
+	role, _ := c.Get("role")
 	orderID, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid order id"})
@@ -213,7 +236,7 @@ func (h *ConversationHandler) SendTemplate(c *gin.Context) {
 		return
 	}
 
-	conv, err := h.convSvc.SendTemplate(c.Request.Context(), uint(orderID), userID.(uint), uint(templateID))
+	conv, err := h.convSvc.SendTemplate(c.Request.Context(), uint(orderID), userID.(uint), uint(templateID), role.(string))
 	if err != nil {
 		if errors.Is(err, services.ErrTemplateNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "template not found"})
@@ -221,6 +244,10 @@ func (h *ConversationHandler) SendTemplate(c *gin.Context) {
 		}
 		if errors.Is(err, services.ErrRateLimitExceeded) {
 			c.JSON(http.StatusTooManyRequests, gin.H{"error": err.Error()})
+			return
+		}
+		if errors.Is(err, services.ErrOrderForbidden) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "not authorized to access this order"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to send template"})

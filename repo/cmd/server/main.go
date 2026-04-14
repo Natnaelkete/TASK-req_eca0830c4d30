@@ -42,6 +42,9 @@ func main() {
 	capacitySvc := services.NewCapacityService(db)
 	capacitySvc.StartCapacityMonitor(bgCtx)
 
+	retentionSvc := services.NewRetentionService(db)
+	retentionSvc.StartRetentionWorker(bgCtx)
+
 	router := setupRouter(db, cfg, queueSvc, taskSvc, capacitySvc)
 
 	srv := &http.Server{
@@ -85,7 +88,7 @@ func setupRouter(db *gorm.DB, cfg *config.Config, queueSvc *services.QueueServic
 	r.GET("/health", healthHandler(db))
 
 	// Services
-	authSvc := services.NewAuthService(db, cfg.JWTSecret)
+	authSvc := services.NewAuthService(db, cfg.JWTSecret, cfg.EncryptionKey)
 	plotSvc := services.NewPlotService(db)
 	deviceSvc := services.NewDeviceService(db)
 	metricSvc := services.NewMetricService(db)
@@ -96,6 +99,7 @@ func setupRouter(db *gorm.DB, cfg *config.Config, queueSvc *services.QueueServic
 	convSvc := services.NewConversationService(db)
 	chatSvc := services.NewChatService(db)
 	resultSvc := services.NewResultService(db)
+	indicatorSvc := services.NewIndicatorService(db)
 
 	// Handlers
 	authH := handlers.NewAuthHandler(authSvc)
@@ -111,6 +115,13 @@ func setupRouter(db *gorm.DB, cfg *config.Config, queueSvc *services.QueueServic
 	chatH := handlers.NewChatHandler(chatSvc)
 	resultH := handlers.NewResultHandler(resultSvc)
 	capacityH := handlers.NewCapacityHandler(capacitySvc)
+	indicatorH := handlers.NewIndicatorHandler(indicatorSvc)
+
+	// Role shortcuts
+	adminOnly := middleware.RoleGuard("admin")
+	adminOrResearcher := middleware.RoleGuard("admin", "researcher")
+	adminResearcherReviewer := middleware.RoleGuard("admin", "researcher", "reviewer")
+	adminResearcherReviewerCS := middleware.RoleGuard("admin", "researcher", "reviewer", "customer_service")
 
 	// Auth routes (public)
 	v1 := r.Group("/v1")
@@ -121,55 +132,55 @@ func setupRouter(db *gorm.DB, cfg *config.Config, queueSvc *services.QueueServic
 		auth.GET("/me", middleware.AuthMiddleware(authSvc), authH.Me)
 	}
 
-	// Protected routes
+	// Protected routes (require authentication)
 	protected := v1.Group("")
 	protected.Use(middleware.AuthMiddleware(authSvc))
 	{
-		// Plots
+		// Plots — admin/researcher can create/update/delete; all authenticated can read
 		plots := protected.Group("/plots")
 		{
-			plots.POST("", plotH.Create)
+			plots.POST("", adminOrResearcher, plotH.Create)
 			plots.GET("", plotH.List)
 			plots.GET("/:id", plotH.Get)
-			plots.PUT("/:id", plotH.Update)
-			plots.DELETE("/:id", plotH.Delete)
+			plots.PUT("/:id", adminOrResearcher, plotH.Update)
+			plots.DELETE("/:id", adminOrResearcher, plotH.Delete)
 		}
 
-		// Devices
+		// Devices — admin/researcher can manage; all authenticated can read
 		devices := protected.Group("/devices")
 		{
-			devices.POST("", deviceH.Create)
+			devices.POST("", adminOrResearcher, deviceH.Create)
 			devices.GET("", deviceH.List)
 			devices.GET("/:id", deviceH.Get)
-			devices.PUT("/:id", deviceH.Update)
-			devices.DELETE("/:id", deviceH.Delete)
+			devices.PUT("/:id", adminOrResearcher, deviceH.Update)
+			devices.DELETE("/:id", adminOrResearcher, deviceH.Delete)
 		}
 
-		// Metrics
+		// Metrics — admin/researcher can manage; all authenticated can read
 		metrics := protected.Group("/metrics")
 		{
-			metrics.POST("", metricH.Create)
-			metrics.POST("/batch", metricH.BatchCreate)
+			metrics.POST("", adminOrResearcher, metricH.Create)
+			metrics.POST("/batch", adminOrResearcher, metricH.BatchCreate)
 			metrics.GET("", metricH.List)
 			metrics.GET("/:id", metricH.Get)
-			metrics.DELETE("/:id", metricH.Delete)
+			metrics.DELETE("/:id", adminOrResearcher, metricH.Delete)
 		}
 
-		// Monitoring (device health & alerts)
+		// Monitoring (device health & alerts) — admin/researcher can manage
 		monitor := protected.Group("/monitor")
 		{
-			monitor.POST("/device", monitorH.CheckDevice)
-			monitor.POST("/threshold", monitorH.ThresholdCheck)
+			monitor.POST("/device", adminOrResearcher, monitorH.CheckDevice)
+			monitor.POST("/threshold", adminOrResearcher, monitorH.ThresholdCheck)
 			monitor.GET("/jobs/:id", monitorH.JobStatus)
 			monitor.GET("/queue/status", monitorH.QueueStats)
 			monitor.GET("/alerts", monitorH.ListAlerts)
-			monitor.PATCH("/alerts/:id/resolve", monitorH.ResolveAlert)
+			monitor.PATCH("/alerts/:id/resolve", adminOrResearcher, monitorH.ResolveAlert)
 		}
 
-		// Monitoring Data (batch ingest, queries, aggregation, curves, trends, export)
+		// Monitoring Data — admin/researcher can ingest; all authenticated can query
 		monitoring := protected.Group("/monitoring")
 		{
-			monitoring.POST("/ingest", monDataH.BatchIngest)
+			monitoring.POST("/ingest", adminOrResearcher, monDataH.BatchIngest)
 			monitoring.GET("/data", monDataH.List)
 			monitoring.GET("/data/:id", monDataH.Get)
 			monitoring.POST("/aggregate", monDataH.Aggregate)
@@ -180,7 +191,7 @@ func setupRouter(db *gorm.DB, cfg *config.Config, queueSvc *services.QueueServic
 			monitoring.GET("/jobs/:id", monDataH.JobStatus)
 		}
 
-		// Dashboards
+		// Dashboards — all authenticated users (user-scoped at service level)
 		dashboards := protected.Group("/dashboards")
 		{
 			dashboards.POST("", dashH.Create)
@@ -190,16 +201,30 @@ func setupRouter(db *gorm.DB, cfg *config.Config, queueSvc *services.QueueServic
 			dashboards.DELETE("/:id", dashH.Delete)
 		}
 
-		// Analysis (trends, funnels, retention with drill-down)
+		// Analysis — admin/researcher/reviewer can run analyses
 		analysis := protected.Group("/analysis")
+		analysis.Use(adminResearcherReviewer)
 		{
 			analysis.POST("/trends", analysisH.Trends)
 			analysis.POST("/funnels", analysisH.Funnels)
 			analysis.POST("/retention", analysisH.Retention)
 		}
 
-		// Orders & Conversations (Phase 7)
+		// Indicators (version management) — admin/researcher can manage; all authenticated can read
+		indicators := protected.Group("/indicators")
+		{
+			indicators.POST("", adminOrResearcher, indicatorH.Create)
+			indicators.GET("", indicatorH.List)
+			indicators.GET("/:id", indicatorH.Get)
+			indicators.PUT("/:id", adminOrResearcher, indicatorH.Update)
+			indicators.DELETE("/:id", adminOnly, indicatorH.Delete)
+			indicators.GET("/:id/versions", indicatorH.ListVersions)
+			indicators.GET("/:id/versions/:version", indicatorH.GetVersion)
+		}
+
+		// Orders & Conversations — admin/researcher/reviewer/customer_service
 		orders := protected.Group("/orders")
+		orders.Use(adminResearcherReviewerCS)
 		{
 			orders.POST("", convH.CreateOrder)
 			orders.GET("", convH.ListOrders)
@@ -211,28 +236,28 @@ func setupRouter(db *gorm.DB, cfg *config.Config, queueSvc *services.QueueServic
 			orders.POST("/:id/templates/:template_id", convH.SendTemplate)
 		}
 
-		// Templates
+		// Templates — admin/customer_service can manage
 		templates := protected.Group("/templates")
 		{
-			templates.POST("", convH.CreateTemplate)
+			templates.POST("", middleware.RoleGuard("admin", "customer_service"), convH.CreateTemplate)
 			templates.GET("", convH.ListTemplates)
 		}
 
-		// Tasks (Phase 9)
+		// Tasks — admin/researcher can create/update/delete; reviewer can review/complete
 		tasks := protected.Group("/tasks")
 		{
-			tasks.POST("", taskH.Create)
-			tasks.POST("/generate", taskH.Generate)
+			tasks.POST("", adminOrResearcher, taskH.Create)
+			tasks.POST("/generate", adminOrResearcher, taskH.Generate)
 			tasks.GET("", taskH.List)
 			tasks.GET("/:id", taskH.Get)
-			tasks.PUT("/:id", taskH.Update)
-			tasks.DELETE("/:id", taskH.Delete)
-			tasks.PATCH("/:id/submit", taskH.Submit)
-			tasks.PATCH("/:id/review", taskH.Review)
-			tasks.PATCH("/:id/complete", taskH.Complete)
+			tasks.PUT("/:id", adminOrResearcher, taskH.Update)
+			tasks.DELETE("/:id", adminOrResearcher, taskH.Delete)
+			tasks.PATCH("/:id/submit", adminOrResearcher, taskH.Submit)
+			tasks.PATCH("/:id/review", adminResearcherReviewer, taskH.Review)
+			tasks.PATCH("/:id/complete", adminResearcherReviewer, taskH.Complete)
 		}
 
-		// Chat (legacy simple messaging)
+		// Chat (legacy simple messaging) — all authenticated
 		chat := protected.Group("/chat")
 		{
 			chat.POST("", chatH.Send)
@@ -240,23 +265,24 @@ func setupRouter(db *gorm.DB, cfg *config.Config, queueSvc *services.QueueServic
 			chat.PATCH("/:id/read", chatH.MarkRead)
 		}
 
-		// Results (Phase 8)
+		// Results — admin/researcher can create/update/delete; admin/researcher/reviewer for transitions
 		results := protected.Group("/results")
 		{
-			results.POST("", resultH.Create)
+			results.POST("", adminOrResearcher, resultH.Create)
 			results.GET("", resultH.List)
 			results.GET("/:id", resultH.Get)
-			results.PUT("/:id", resultH.Update)
-			results.DELETE("/:id", resultH.Delete)
-			results.PATCH("/:id/transition", resultH.Transition)
-			results.POST("/:id/notes", resultH.AppendNotes)
-			results.POST("/:id/invalidate", resultH.Invalidate)
-			results.POST("/field-rules", resultH.CreateFieldRule)
+			results.PUT("/:id", adminOrResearcher, resultH.Update)
+			results.DELETE("/:id", adminOrResearcher, resultH.Delete)
+			results.PATCH("/:id/transition", adminResearcherReviewer, resultH.Transition)
+			results.POST("/:id/notes", adminResearcherReviewer, resultH.AppendNotes)
+			results.POST("/:id/invalidate", adminOnly, resultH.Invalidate)
+			results.POST("/field-rules", adminOnly, resultH.CreateFieldRule)
 			results.GET("/field-rules", resultH.ListFieldRules)
 		}
 
-		// System (Phase 10)
+		// System — admin only
 		system := protected.Group("/system")
+		system.Use(adminOnly)
 		{
 			system.GET("/capacity", capacityH.CheckDisk)
 			system.GET("/notifications", capacityH.ListNotifications)

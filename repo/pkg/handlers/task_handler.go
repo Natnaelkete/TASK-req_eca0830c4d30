@@ -51,11 +51,14 @@ func (h *TaskHandler) List(c *gin.Context) {
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
 	assignedTo, _ := strconv.ParseUint(c.Query("assigned_to"), 10, 64)
 	objectID, _ := strconv.ParseUint(c.Query("object_id"), 10, 64)
+	userID, _ := c.Get("user_id")
+	role, _ := c.Get("role")
 
 	result, err := h.taskSvc.List(c.Request.Context(), services.TaskListParams{
 		Page: page, PageSize: pageSize,
 		Status: c.Query("status"), AssignedTo: uint(assignedTo),
 		ObjectID: uint(objectID), ObjectType: c.Query("object_type"),
+		UserID: userID.(uint), Role: role.(string),
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list tasks"})
@@ -70,10 +73,16 @@ func (h *TaskHandler) Get(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task id"})
 		return
 	}
-	task, err := h.taskSvc.GetByID(c.Request.Context(), uint(id))
+	userID, _ := c.Get("user_id")
+	role, _ := c.Get("role")
+	task, err := h.taskSvc.GetByID(c.Request.Context(), uint(id), userID.(uint), role.(string))
 	if err != nil {
 		if errors.Is(err, services.ErrTaskNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
+			return
+		}
+		if errors.Is(err, services.ErrTaskForbidden) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "not authorized to access this task"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get task"})
@@ -88,15 +97,21 @@ func (h *TaskHandler) Update(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task id"})
 		return
 	}
+	userID, _ := c.Get("user_id")
+	role, _ := c.Get("role")
 	var in services.UpdateTaskInput
 	if err := c.ShouldBindJSON(&in); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	task, err := h.taskSvc.Update(c.Request.Context(), uint(id), in)
+	task, err := h.taskSvc.Update(c.Request.Context(), uint(id), userID.(uint), role.(string), in)
 	if err != nil {
 		if errors.Is(err, services.ErrTaskNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
+			return
+		}
+		if errors.Is(err, services.ErrTaskForbidden) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "not authorized to modify this task"})
 			return
 		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -111,9 +126,15 @@ func (h *TaskHandler) Delete(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task id"})
 		return
 	}
-	if err := h.taskSvc.Delete(c.Request.Context(), uint(id)); err != nil {
+	userID, _ := c.Get("user_id")
+	role, _ := c.Get("role")
+	if err := h.taskSvc.Delete(c.Request.Context(), uint(id), userID.(uint), role.(string)); err != nil {
 		if errors.Is(err, services.ErrTaskNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
+			return
+		}
+		if errors.Is(err, services.ErrTaskForbidden) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "not authorized to delete this task"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete task"})

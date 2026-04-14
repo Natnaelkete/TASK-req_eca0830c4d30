@@ -39,7 +39,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{
 		"id":       user.ID,
 		"username": user.Username,
-		"email":    user.Email,
+		"email":    user.MaskedEmail,
 		"role":     user.Role,
 	})
 }
@@ -82,7 +82,7 @@ func (h *AuthHandler) Me(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"id":       user.ID,
 		"username": user.Username,
-		"email":    user.Email,
+		"email":    user.MaskedEmail,
 		"role":     user.Role,
 	})
 }

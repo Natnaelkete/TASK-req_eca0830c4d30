@@ -380,6 +380,8 @@ type MonitoringDataListParams struct {
 	StartTime  string
 	EndTime    string
 	Tags       string
+	UserID     uint   // authenticated user for scoping
+	Role       string // authenticated user role
 }
 
 type PaginatedMonitoringData struct {
@@ -399,6 +401,17 @@ func (s *MonitoringDataService) List(ctx context.Context, p MonitoringDataListPa
 	}
 
 	q := s.db.WithContext(ctx).Model(&models.MonitoringData{})
+
+	// Object-level isolation: non-admin users only see data from their plots
+	if p.Role != "admin" && p.UserID > 0 {
+		var plotIDs []uint
+		s.db.WithContext(ctx).Model(&models.Plot{}).Where("user_id = ?", p.UserID).Pluck("id", &plotIDs)
+		if len(plotIDs) == 0 {
+			return &PaginatedMonitoringData{Data: []models.MonitoringData{}, Total: 0, Page: p.Page, PageSize: p.PageSize, TotalPages: 0}, nil
+		}
+		q = q.Where("plot_id IN ?", plotIDs)
+	}
+
 	q = applyMonitoringFilters(q, p.PlotID, p.DeviceID, p.MetricCode, p.StartTime, p.EndTime, p.Tags)
 
 	var total int64

@@ -10,8 +10,9 @@ import (
 )
 
 var (
-	ErrDeviceNotFound = errors.New("device not found")
+	ErrDeviceNotFound  = errors.New("device not found")
 	ErrDuplicateSerial = errors.New("serial number already exists")
+	ErrDeviceForbidden = errors.New("not authorized to access this device")
 )
 
 type DeviceService struct {
@@ -65,6 +66,32 @@ type DeviceListParams struct {
 	PageSize int
 	PlotID   uint
 	Status   string
+	UserID   uint   // authenticated user for scoping
+	Role     string // authenticated user role
+}
+
+// userOwnedPlotIDs returns the plot IDs owned by the given user.
+func (s *DeviceService) userOwnedPlotIDs(ctx context.Context, userID uint) ([]uint, error) {
+	var plotIDs []uint
+	if err := s.db.WithContext(ctx).Model(&models.Plot{}).Where("user_id = ?", userID).Pluck("id", &plotIDs).Error; err != nil {
+		return nil, fmt.Errorf("get user plots: %w", err)
+	}
+	return plotIDs, nil
+}
+
+// checkDeviceOwnership verifies that the user owns the plot the device belongs to.
+func (s *DeviceService) checkDeviceOwnership(ctx context.Context, device *models.Device, userID uint, role string) error {
+	if role == "admin" {
+		return nil
+	}
+	var plot models.Plot
+	if err := s.db.WithContext(ctx).First(&plot, device.PlotID).Error; err != nil {
+		return ErrDeviceForbidden
+	}
+	if plot.UserID != userID {
+		return ErrDeviceForbidden
+	}
+	return nil
 }
 
 type PaginatedDevices struct {
@@ -84,6 +111,19 @@ func (s *DeviceService) List(ctx context.Context, p DeviceListParams) (*Paginate
 	}
 
 	q := s.db.WithContext(ctx).Model(&models.Device{})
+
+	// Object-level isolation: non-admin users only see devices on their plots
+	if p.Role != "admin" && p.UserID > 0 {
+		plotIDs, err := s.userOwnedPlotIDs(ctx, p.UserID)
+		if err != nil {
+			return nil, err
+		}
+		if len(plotIDs) == 0 {
+			return &PaginatedDevices{Data: []models.Device{}, Total: 0, Page: p.Page, PageSize: p.PageSize, TotalPages: 0}, nil
+		}
+		q = q.Where("plot_id IN ?", plotIDs)
+	}
+
 	if p.PlotID > 0 {
 		q = q.Where("plot_id = ?", p.PlotID)
 	}
@@ -116,7 +156,7 @@ func (s *DeviceService) List(ctx context.Context, p DeviceListParams) (*Paginate
 	}, nil
 }
 
-func (s *DeviceService) GetByID(ctx context.Context, id uint) (*models.Device, error) {
+func (s *DeviceService) GetByID(ctx context.Context, id, userID uint, role string) (*models.Device, error) {
 	var device models.Device
 	if err := s.db.WithContext(ctx).First(&device, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -124,16 +164,22 @@ func (s *DeviceService) GetByID(ctx context.Context, id uint) (*models.Device, e
 		}
 		return nil, fmt.Errorf("get device: %w", err)
 	}
+	if err := s.checkDeviceOwnership(ctx, &device, userID, role); err != nil {
+		return nil, err
+	}
 	return &device, nil
 }
 
-func (s *DeviceService) Update(ctx context.Context, id uint, in UpdateDeviceInput) (*models.Device, error) {
+func (s *DeviceService) Update(ctx context.Context, id, userID uint, role string, in UpdateDeviceInput) (*models.Device, error) {
 	var device models.Device
 	if err := s.db.WithContext(ctx).First(&device, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrDeviceNotFound
 		}
 		return nil, fmt.Errorf("find device: %w", err)
+	}
+	if err := s.checkDeviceOwnership(ctx, &device, userID, role); err != nil {
+		return nil, err
 	}
 
 	updates := make(map[string]interface{})
@@ -159,13 +205,19 @@ func (s *DeviceService) Update(ctx context.Context, id uint, in UpdateDeviceInpu
 	return &device, nil
 }
 
-func (s *DeviceService) Delete(ctx context.Context, id uint) error {
-	res := s.db.WithContext(ctx).Delete(&models.Device{}, id)
-	if res.Error != nil {
-		return fmt.Errorf("delete device: %w", res.Error)
+func (s *DeviceService) Delete(ctx context.Context, id, userID uint, role string) error {
+	var device models.Device
+	if err := s.db.WithContext(ctx).First(&device, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrDeviceNotFound
+		}
+		return fmt.Errorf("find device: %w", err)
 	}
-	if res.RowsAffected == 0 {
-		return ErrDeviceNotFound
+	if err := s.checkDeviceOwnership(ctx, &device, userID, role); err != nil {
+		return err
+	}
+	if err := s.db.WithContext(ctx).Delete(&models.Device{}, id).Error; err != nil {
+		return fmt.Errorf("delete device: %w", err)
 	}
 	return nil
 }

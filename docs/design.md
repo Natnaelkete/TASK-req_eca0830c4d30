@@ -206,5 +206,5 @@ No external cloud services, message queues, or external identity providers are u
   - Utility functions and domain logic.
 - **API tests** cover:
   - Endpoint behaviour with normal, boundary, and error conditions.
-- All tests are run via `run_tests.sh` from the repository root.
+- All tests are run via `make test` (which runs `go test ./... -v -cover`) from the repository root.
 - The testing setup is designed so that it can run inside Docker or against a Dockerized database.

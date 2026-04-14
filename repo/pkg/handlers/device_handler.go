@@ -42,12 +42,16 @@ func (h *DeviceHandler) List(c *gin.Context) {
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
 	plotID, _ := strconv.ParseUint(c.Query("plot_id"), 10, 64)
 	status := c.Query("status")
+	userID, _ := c.Get("user_id")
+	role, _ := c.Get("role")
 
 	result, err := h.deviceSvc.List(c.Request.Context(), services.DeviceListParams{
 		Page:     page,
 		PageSize: pageSize,
 		PlotID:   uint(plotID),
 		Status:   status,
+		UserID:   userID.(uint),
+		Role:     role.(string),
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list devices"})
@@ -64,10 +68,16 @@ func (h *DeviceHandler) Get(c *gin.Context) {
 		return
 	}
 
-	device, err := h.deviceSvc.GetByID(c.Request.Context(), uint(id))
+	userID, _ := c.Get("user_id")
+	role, _ := c.Get("role")
+	device, err := h.deviceSvc.GetByID(c.Request.Context(), uint(id), userID.(uint), role.(string))
 	if err != nil {
 		if errors.Is(err, services.ErrDeviceNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "device not found"})
+			return
+		}
+		if errors.Is(err, services.ErrDeviceForbidden) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "not authorized to access this device"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get device"})
@@ -90,7 +100,9 @@ func (h *DeviceHandler) Update(c *gin.Context) {
 		return
 	}
 
-	device, err := h.deviceSvc.Update(c.Request.Context(), uint(id), in)
+	userID, _ := c.Get("user_id")
+	role, _ := c.Get("role")
+	device, err := h.deviceSvc.Update(c.Request.Context(), uint(id), userID.(uint), role.(string), in)
 	if err != nil {
 		if errors.Is(err, services.ErrDeviceNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "device not found"})
@@ -110,9 +122,15 @@ func (h *DeviceHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	if err := h.deviceSvc.Delete(c.Request.Context(), uint(id)); err != nil {
+	userID, _ := c.Get("user_id")
+	role, _ := c.Get("role")
+	if err := h.deviceSvc.Delete(c.Request.Context(), uint(id), userID.(uint), role.(string)); err != nil {
 		if errors.Is(err, services.ErrDeviceNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "device not found"})
+			return
+		}
+		if errors.Is(err, services.ErrDeviceForbidden) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "not authorized to access this device"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete device"})

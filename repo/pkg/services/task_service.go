@@ -14,6 +14,7 @@ import (
 var (
 	ErrTaskNotFound       = errors.New("task not found")
 	ErrTaskInvalidStatus  = errors.New("invalid task status transition")
+	ErrTaskForbidden      = errors.New("not authorized to access this task")
 )
 
 // OverdueThreshold is the default overdue period (7 days after DueEnd).
@@ -215,7 +216,7 @@ func (s *TaskService) MarkOverdueTasks(ctx context.Context) (int64, error) {
 	res := s.db.WithContext(ctx).
 		Model(&models.Task{}).
 		Where("status IN ? AND due_end IS NOT NULL AND due_end < ? AND overdue_at IS NULL",
-			[]string{"pending", "in_progress"}, cutoff).
+			[]string{"pending", "in_progress", "submitted", "under_review"}, cutoff).
 		Updates(map[string]interface{}{
 			"status":     "delayed",
 			"overdue_at": time.Now(),
@@ -255,6 +256,8 @@ type TaskListParams struct {
 	AssignedTo uint
 	ObjectID   uint
 	ObjectType string
+	UserID     uint   // authenticated user ID for scoping
+	Role       string // authenticated user role
 }
 
 type PaginatedTasks struct {
@@ -274,6 +277,12 @@ func (s *TaskService) List(ctx context.Context, p TaskListParams) (*PaginatedTas
 	}
 
 	q := s.db.WithContext(ctx).Model(&models.Task{})
+
+	// Object-level isolation: non-admin users only see tasks assigned to them or where they are reviewer
+	if p.Role != "admin" && p.UserID > 0 {
+		q = q.Where("assigned_to = ? OR reviewer_id = ?", p.UserID, p.UserID)
+	}
+
 	if p.Status != "" {
 		q = q.Where("status = ?", p.Status)
 	}
@@ -312,7 +321,7 @@ func (s *TaskService) List(ctx context.Context, p TaskListParams) (*PaginatedTas
 	}, nil
 }
 
-func (s *TaskService) GetByID(ctx context.Context, id uint) (*models.Task, error) {
+func (s *TaskService) GetByID(ctx context.Context, id, userID uint, role string) (*models.Task, error) {
 	var task models.Task
 	if err := s.db.WithContext(ctx).First(&task, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -320,16 +329,25 @@ func (s *TaskService) GetByID(ctx context.Context, id uint) (*models.Task, error
 		}
 		return nil, fmt.Errorf("get task: %w", err)
 	}
+	// Object-level check: non-admin users must be assigned or reviewer
+	if role != "admin" && task.AssignedTo != userID && (task.ReviewerID == nil || *task.ReviewerID != userID) {
+		return nil, ErrTaskForbidden
+	}
 	return &task, nil
 }
 
-func (s *TaskService) Update(ctx context.Context, id uint, in UpdateTaskInput) (*models.Task, error) {
+func (s *TaskService) Update(ctx context.Context, id, userID uint, role string, in UpdateTaskInput) (*models.Task, error) {
 	var task models.Task
 	if err := s.db.WithContext(ctx).First(&task, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrTaskNotFound
 		}
 		return nil, fmt.Errorf("find task: %w", err)
+	}
+
+	// Ownership check: only assigned user, reviewer, or admin can update
+	if role != "admin" && task.AssignedTo != userID && (task.ReviewerID == nil || *task.ReviewerID != userID) {
+		return nil, ErrTaskForbidden
 	}
 
 	updates := make(map[string]interface{})
@@ -370,13 +388,22 @@ func (s *TaskService) Update(ctx context.Context, id uint, in UpdateTaskInput) (
 	return &task, nil
 }
 
-func (s *TaskService) Delete(ctx context.Context, id uint) error {
-	res := s.db.WithContext(ctx).Delete(&models.Task{}, id)
-	if res.Error != nil {
-		return fmt.Errorf("delete task: %w", res.Error)
+func (s *TaskService) Delete(ctx context.Context, id, userID uint, role string) error {
+	var task models.Task
+	if err := s.db.WithContext(ctx).First(&task, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrTaskNotFound
+		}
+		return fmt.Errorf("find task: %w", err)
 	}
-	if res.RowsAffected == 0 {
-		return ErrTaskNotFound
+
+	// Ownership check: only assigned user or admin can delete
+	if role != "admin" && task.AssignedTo != userID {
+		return ErrTaskForbidden
+	}
+
+	if err := s.db.WithContext(ctx).Delete(&models.Task{}, id).Error; err != nil {
+		return fmt.Errorf("delete task: %w", err)
 	}
 	return nil
 }

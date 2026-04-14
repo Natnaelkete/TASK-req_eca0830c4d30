@@ -44,6 +44,7 @@ The API will be available at `http://localhost:8080`.
 | `DB_NAME` | `agri` | Database name |
 | `JWT_SECRET` | `change-me-in-production` | JWT signing secret |
 | `SERVER_PORT` | `8080` | API server port |
+| `ENCRYPTION_KEY` | `0123456789abcdef0123456789abcdef` | 32-byte AES key for field encryption |
 
 ## Verification
 
@@ -240,7 +241,9 @@ repo/
 │   ├── middleware/               # Auth (JWT), Audit logging
 │   ├── models/                  # GORM models + DB init
 │   └── services/                # Business logic layer
-├── migrations/001_create.sql    # Database schema
+├── migrations/
+│   ├── 001_create.sql           # Initial database schema
+│   └── 002_indicator_versions_and_partitioning.sql  # Indicators, partitioning, archive
 ├── Dockerfile                   # Multi-stage build
 ├── docker-compose.yml           # MySQL + API orchestration
 ├── Makefile                     # Build/test/docker commands

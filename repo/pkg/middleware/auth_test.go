@@ -50,7 +50,7 @@ func makeToken(secret string, userID uint, role string, expired bool) string {
 }
 
 func TestAuthMiddleware_NoHeader(t *testing.T) {
-	authSvc := services.NewAuthService(nil, testSecret)
+	authSvc := services.NewAuthService(nil, testSecret, "0123456789abcdef0123456789abcdef")
 	r := setupTestRouter(authSvc)
 
 	w := httptest.NewRecorder()
@@ -62,7 +62,7 @@ func TestAuthMiddleware_NoHeader(t *testing.T) {
 }
 
 func TestAuthMiddleware_BadFormat(t *testing.T) {
-	authSvc := services.NewAuthService(nil, testSecret)
+	authSvc := services.NewAuthService(nil, testSecret, "0123456789abcdef0123456789abcdef")
 	r := setupTestRouter(authSvc)
 
 	w := httptest.NewRecorder()
@@ -75,7 +75,7 @@ func TestAuthMiddleware_BadFormat(t *testing.T) {
 }
 
 func TestAuthMiddleware_InvalidToken(t *testing.T) {
-	authSvc := services.NewAuthService(nil, testSecret)
+	authSvc := services.NewAuthService(nil, testSecret, "0123456789abcdef0123456789abcdef")
 	r := setupTestRouter(authSvc)
 
 	w := httptest.NewRecorder()
@@ -87,7 +87,7 @@ func TestAuthMiddleware_InvalidToken(t *testing.T) {
 }
 
 func TestAuthMiddleware_ExpiredToken(t *testing.T) {
-	authSvc := services.NewAuthService(nil, testSecret)
+	authSvc := services.NewAuthService(nil, testSecret, "0123456789abcdef0123456789abcdef")
 	r := setupTestRouter(authSvc)
 
 	token := makeToken(testSecret, 1, "admin", true)
@@ -100,7 +100,7 @@ func TestAuthMiddleware_ExpiredToken(t *testing.T) {
 }
 
 func TestAuthMiddleware_ValidToken(t *testing.T) {
-	authSvc := services.NewAuthService(nil, testSecret)
+	authSvc := services.NewAuthService(nil, testSecret, "0123456789abcdef0123456789abcdef")
 	r := setupTestRouter(authSvc)
 
 	token := makeToken(testSecret, 42, "researcher", false)
@@ -117,7 +117,7 @@ func TestAuthMiddleware_ValidToken(t *testing.T) {
 func TestRoleGuard_Allowed(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	authSvc := services.NewAuthService(nil, testSecret)
+	authSvc := services.NewAuthService(nil, testSecret, "0123456789abcdef0123456789abcdef")
 	r.Use(AuthMiddleware(authSvc), RoleGuard("admin"))
 	r.GET("/admin-only", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"ok": true})
@@ -135,7 +135,7 @@ func TestRoleGuard_Allowed(t *testing.T) {
 func TestRoleGuard_Denied(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	authSvc := services.NewAuthService(nil, testSecret)
+	authSvc := services.NewAuthService(nil, testSecret, "0123456789abcdef0123456789abcdef")
 	r.Use(AuthMiddleware(authSvc), RoleGuard("admin"))
 	r.GET("/admin-only", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"ok": true})

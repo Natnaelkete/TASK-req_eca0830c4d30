@@ -37,12 +37,24 @@ func (h *PlotHandler) Create(c *gin.Context) {
 func (h *PlotHandler) List(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
-	userIDFilter, _ := strconv.ParseUint(c.Query("user_id"), 10, 64)
+
+	// Scope to authenticated user's plots unless admin
+	userID := c.GetUint("user_id")
+	role, _ := c.Get("role")
+	filterUserID := userID
+	if role.(string) == "admin" {
+		// Admin can optionally filter by user_id query param or see all
+		if qUserID, err := strconv.ParseUint(c.Query("user_id"), 10, 64); err == nil && qUserID > 0 {
+			filterUserID = uint(qUserID)
+		} else {
+			filterUserID = 0 // admin sees all
+		}
+	}
 
 	result, err := h.plotSvc.List(c.Request.Context(), services.PlotListParams{
 		Page:     page,
 		PageSize: pageSize,
-		UserID:   uint(userIDFilter),
+		UserID:   filterUserID,
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list plots"})
@@ -59,10 +71,17 @@ func (h *PlotHandler) Get(c *gin.Context) {
 		return
 	}
 
-	plot, err := h.plotSvc.GetByID(c.Request.Context(), uint(id))
+	userID := c.GetUint("user_id")
+	role, _ := c.Get("role")
+
+	plot, err := h.plotSvc.GetByID(c.Request.Context(), uint(id), userID, role.(string))
 	if err != nil {
 		if errors.Is(err, services.ErrPlotNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "plot not found"})
+			return
+		}
+		if errors.Is(err, services.ErrPlotForbidden) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "not authorized to access this plot"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get plot"})
@@ -79,16 +98,23 @@ func (h *PlotHandler) Update(c *gin.Context) {
 		return
 	}
 
+	userID := c.GetUint("user_id")
+	role, _ := c.Get("role")
+
 	var in services.UpdatePlotInput
 	if err := c.ShouldBindJSON(&in); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	plot, err := h.plotSvc.Update(c.Request.Context(), uint(id), in)
+	plot, err := h.plotSvc.Update(c.Request.Context(), uint(id), userID, role.(string), in)
 	if err != nil {
 		if errors.Is(err, services.ErrPlotNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "plot not found"})
+			return
+		}
+		if errors.Is(err, services.ErrPlotForbidden) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "not authorized to modify this plot"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update plot"})
@@ -105,9 +131,16 @@ func (h *PlotHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	if err := h.plotSvc.Delete(c.Request.Context(), uint(id)); err != nil {
+	userID := c.GetUint("user_id")
+	role, _ := c.Get("role")
+
+	if err := h.plotSvc.Delete(c.Request.Context(), uint(id), userID, role.(string)); err != nil {
 		if errors.Is(err, services.ErrPlotNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "plot not found"})
+			return
+		}
+		if errors.Is(err, services.ErrPlotForbidden) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "not authorized to delete this plot"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete plot"})

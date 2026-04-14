@@ -45,6 +45,8 @@ func (h *MonitoringDataHandler) List(c *gin.Context) {
 	plotID, _ := strconv.ParseUint(c.Query("plot_id"), 10, 64)
 	deviceID, _ := strconv.ParseUint(c.Query("device_id"), 10, 64)
 
+	userID, _ := c.Get("user_id")
+	role, _ := c.Get("role")
 	result, err := h.monDataSvc.List(c.Request.Context(), services.MonitoringDataListParams{
 		Page:       page,
 		PageSize:   pageSize,
@@ -54,6 +56,8 @@ func (h *MonitoringDataHandler) List(c *gin.Context) {
 		StartTime:  c.Query("start_time"),
 		EndTime:    c.Query("end_time"),
 		Tags:       c.Query("tags"),
+		UserID:     userID.(uint),
+		Role:       role.(string),
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list monitoring data"})

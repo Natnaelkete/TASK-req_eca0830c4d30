@@ -18,6 +18,7 @@ var (
 	ErrResultArchived        = errors.New("archived results cannot be modified")
 	ErrInvalidationNoReason  = errors.New("invalidation requires a reason")
 	ErrFieldValidationFailed = errors.New("field validation failed")
+	ErrResultForbidden       = errors.New("not authorized to access this result")
 )
 
 // validTransitions defines the strict status state machine.
@@ -90,13 +91,18 @@ func (s *ResultService) Create(ctx context.Context, userID uint, in CreateResult
 	return &result, nil
 }
 
-func (s *ResultService) Update(ctx context.Context, id, userID uint, in UpdateResultInput) (*models.Result, error) {
+func (s *ResultService) Update(ctx context.Context, id, userID uint, role string, in UpdateResultInput) (*models.Result, error) {
 	var result models.Result
 	if err := s.db.WithContext(ctx).First(&result, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrResultNotFound
 		}
 		return nil, fmt.Errorf("find result: %w", err)
+	}
+
+	// Ownership check: only submitter/creator or admin can update
+	if role != "admin" && result.SubmitterID != userID && result.CreatedBy != userID {
+		return nil, ErrResultForbidden
 	}
 
 	if result.Status == "archived" {
@@ -260,6 +266,8 @@ type ResultListParams struct {
 	TaskID   uint
 	Type     string
 	Status   string
+	UserID   uint   // authenticated user for scoping
+	Role     string // authenticated user role
 }
 
 type PaginatedResults struct {
@@ -279,6 +287,12 @@ func (s *ResultService) List(ctx context.Context, p ResultListParams) (*Paginate
 	}
 
 	q := s.db.WithContext(ctx).Model(&models.Result{})
+
+	// Object-level isolation: non-admin users only see results they created/submitted
+	if p.Role != "admin" && p.UserID > 0 {
+		q = q.Where("submitter_id = ? OR created_by = ?", p.UserID, p.UserID)
+	}
+
 	if p.PlotID > 0 {
 		q = q.Where("plot_id = ?", p.PlotID)
 	}
@@ -313,7 +327,7 @@ func (s *ResultService) List(ctx context.Context, p ResultListParams) (*Paginate
 	}, nil
 }
 
-func (s *ResultService) GetByID(ctx context.Context, id uint) (*models.Result, error) {
+func (s *ResultService) GetByID(ctx context.Context, id, userID uint, role string) (*models.Result, error) {
 	var result models.Result
 	if err := s.db.WithContext(ctx).First(&result, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -321,16 +335,34 @@ func (s *ResultService) GetByID(ctx context.Context, id uint) (*models.Result, e
 		}
 		return nil, fmt.Errorf("get result: %w", err)
 	}
+	// Object-level check: non-admin users must be submitter or creator
+	if role != "admin" && result.SubmitterID != userID && result.CreatedBy != userID {
+		return nil, ErrResultForbidden
+	}
 	return &result, nil
 }
 
-func (s *ResultService) Delete(ctx context.Context, id uint) error {
+func (s *ResultService) Delete(ctx context.Context, id, userID uint, role string) error {
+	var result models.Result
+	if err := s.db.WithContext(ctx).First(&result, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrResultNotFound
+		}
+		return fmt.Errorf("find result: %w", err)
+	}
+
+	// Ownership check: only submitter/creator or admin can delete
+	if role != "admin" && result.SubmitterID != userID && result.CreatedBy != userID {
+		return ErrResultForbidden
+	}
+
+	if result.Status == "archived" {
+		return ErrResultArchived
+	}
+
 	res := s.db.WithContext(ctx).Delete(&models.Result{}, id)
 	if res.Error != nil {
 		return fmt.Errorf("delete result: %w", res.Error)
-	}
-	if res.RowsAffected == 0 {
-		return ErrResultNotFound
 	}
 	return nil
 }
@@ -383,7 +415,7 @@ func (s *ResultService) validateFields(ctx context.Context, resultType, fieldsJS
 
 	var rules []models.FieldRule
 	if err := s.db.WithContext(ctx).Where("result_type = ?", resultType).Find(&rules).Error; err != nil {
-		return nil
+		return fmt.Errorf("retrieve field rules: %w", err)
 	}
 
 	for _, rule := range rules {

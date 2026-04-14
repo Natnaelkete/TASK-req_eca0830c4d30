@@ -6,7 +6,7 @@ This document outlines the main external-facing API endpoints of the platform. I
 
 ## 1. Common
 
-- Base URL: `/api/v1`
+- Base URL: `/v1`
 - Authentication:
   - Local username + password.
   - Authenticated endpoints require an Authorization header (e.g., token or session mechanism chosen consistently in implementation).
@@ -24,7 +24,7 @@ This document outlines the main external-facing API endpoints of the platform. I
 
 ### 2.1 Register User
 
-- **POST** `/api/v1/auth/register`
+- **POST** `/v1/auth/register`
 - **Description:** Create a new local account with username and password.
 - **Request Body (JSON):**
   ```json
@@ -46,7 +46,7 @@ This document outlines the main external-facing API endpoints of the platform. I
 
 ### 2.2 Login
 
-- **POST** `/api/v1/auth/login`
+- **POST** `/v1/auth/login`
 - **Description:** Authenticate with username and password.
 - **Request Body (JSON):**
   ```json
@@ -68,7 +68,7 @@ This document outlines the main external-facing API endpoints of the platform. I
 
 ### 3.1 Batch Ingest Monitoring Data
 
-- **POST** `/api/v1/monitoring/data/batch`
+- **POST** `/v1/monitoring/ingest`
 - **Description:** Asynchronously ingest monitoring data using a queue and idempotent keys.
 - **Request Body (JSON):**
   ```json
@@ -92,7 +92,7 @@ This document outlines the main external-facing API endpoints of the platform. I
 
 ### 3.2 Query Monitoring Data
 
-- **GET** `/api/v1/monitoring/data`
+- **GET** `/v1/monitoring/data`
 - **Description:** Query monitoring data with filtering and aggregation.
 - **Query Parameters (examples):**
   - `plot_id`
@@ -119,7 +119,7 @@ This document outlines the main external-facing API endpoints of the platform. I
 
 ### 3.3 Real-Time Curves and Trends
 
-- **GET** `/api/v1/monitoring/trends`
+- **POST** `/v1/monitoring/trends`
 - **Description:** Return aggregated statistics (daily, weekly, monthly) with year-over-year and month-over-month comparisons.
 - **Query Parameters (examples):**
   - `metric_code`
@@ -143,40 +143,36 @@ This document outlines the main external-facing API endpoints of the platform. I
 
 ### 3.4 Dashboard Configuration
 
-- **POST** `/api/v1/monitoring/dashboards`
+- **POST** `/v1/dashboards`
 - **Description:** Save a dashboard configuration for a user.
 - **Request Body:**
   ```json
   {
     "name": "string",
-    "filters": {
-      "plots": ["id"],
-      "devices": ["id"],
-      "metrics": ["metric_code"],
-      "time_range": {
-        "from": "ISO8601",
-        "to": "ISO8601"
-      },
-      "tags": { "key": "value" }
-    }
+    "config": "JSON string with filter/chart settings"
   }
   ```
 
-- **GET** `/api/v1/monitoring/dashboards`
-  - List saved dashboards.
+- **GET** `/v1/dashboards`
+  - List saved dashboards (scoped to authenticated user).
 
-- **GET** `/api/v1/monitoring/dashboards/{id}`
-  - Fetch a single dashboard configuration.
+- **GET** `/v1/dashboards/{id}`
+  - Fetch a single dashboard configuration (ownership enforced).
+
+- **PUT** `/v1/dashboards/{id}`
+  - Update a dashboard configuration.
+
+- **DELETE** `/v1/dashboards/{id}`
+  - Delete a dashboard configuration.
 
 ### 3.5 Export Monitoring Data
 
-- **GET** `/api/v1/monitoring/export`
-- **Description:** Export monitoring data based on filters and time window.
+- **GET** `/v1/monitoring/export/json`
+  - Export monitoring data as JSON download.
+- **GET** `/v1/monitoring/export/csv`
+  - Export monitoring data as CSV download.
 - **Query Parameters:**
-  - Same filters as `/monitoring/data`
-  - `format` (e.g. `csv` or `json`)
-- **Response:**
-  - File download in the requested format.
+  - Same filters as `/v1/monitoring/data` (plot_id, device_id, metric_code, start_time, end_time, tags).
 
 ---
 
@@ -184,59 +180,70 @@ This document outlines the main external-facing API endpoints of the platform. I
 
 ### 4.1 Master Data — Plots
 
-- **GET** `/api/v1/analysis/plots`
-- **POST** `/api/v1/analysis/plots`
-- **GET** `/api/v1/analysis/plots/{id}`
-- **PUT** `/api/v1/analysis/plots/{id}`
-- **DELETE** `/api/v1/analysis/plots/{id}`
+- **POST** `/v1/plots` — Create a plot (admin/researcher)
+- **GET** `/v1/plots` — List plots (scoped by user ownership; admin sees all)
+- **GET** `/v1/plots/{id}` — Get plot (ownership enforced)
+- **PUT** `/v1/plots/{id}` — Update plot (owner/admin)
+- **DELETE** `/v1/plots/{id}` — Delete plot (owner/admin)
 
 Similar CRUD endpoints exist for:
 
-- `/api/v1/analysis/devices`
-- `/api/v1/analysis/metrics`
+- `/v1/devices` — Devices linked to plots (scoped by plot ownership)
+- `/v1/metrics` — Basic metric readings
 
 ### 4.2 Indicator Version Management
 
-- **POST** `/api/v1/analysis/metrics/{metric_code}/versions`
-- **Description:** Create a new indicator version with meta-information.
-- **Request Body (JSON):**
-  ```json
-  {
-    "definition": { "any": "indicator_definition" },
-    "diff_description": "string"
-  }
-  ```
-- **Behaviour:**
+- **POST** `/v1/indicators` — Create a new indicator definition (admin/researcher).
+- **GET** `/v1/indicators` — List indicator definitions.
+- **GET** `/v1/indicators/{id}` — Get indicator definition.
+- **PUT** `/v1/indicators/{id}` — Update indicator and record a new version with diff (admin/researcher).
+  - **Request Body:**
+    ```json
+    {
+      "name": "string",
+      "description": "string",
+      "unit": "string",
+      "formula": "string",
+      "category": "string",
+      "diff_summary": "Description of what changed (required)"
+    }
+    ```
   - Records modifier (current user) and timestamp automatically.
-
-- **GET** `/api/v1/analysis/metrics/{metric_code}/versions`
-  - List versions for the metric, including modifier, timestamp, and difference description.
+- **DELETE** `/v1/indicators/{id}` — Deprecate an indicator (admin only).
+- **GET** `/v1/indicators/{id}/versions` — List all versions with modifier, timestamp, and diff.
+- **GET** `/v1/indicators/{id}/versions/{version}` — Get a specific version.
 
 ### 4.3 Analysis Results (Trends, Funnels, Retention)
 
-- **GET** `/api/v1/analysis/trends`
-  - Returns indicator-based trend results, with options for drill-down.
+- **POST** `/v1/analysis/trends`
+  - Returns indicator-based trend results, with options for drill-down by plot_id or device_id.
 
-- **GET** `/api/v1/analysis/funnels`
-  - Returns funnel-style analysis results.
+- **POST** `/v1/analysis/funnels`
+  - Returns funnel-style analysis results across sequential metric stages.
 
-- **GET** `/api/v1/analysis/retention`
-  - Returns retention analysis results.
+- **POST** `/v1/analysis/retention`
+  - Returns cohort-based retention analysis results.
 
-Each of these should support filters by indicator, time range, and relevant dimensions. Exact JSON payload shape must be consistent with the design but must not introduce new business features.
+Each supports filters by metric_code, time range, plot_id, device_id, and drill_by dimensions.
 
 ---
 
 ## 5. Communication Domain
 
-### 5.1 Create Conversation Message
+### 5.1 Orders
 
-- **POST** `/api/v1/communication/orders/{order_id}/messages`
+- **POST** `/v1/orders` — Create a new order (admin/researcher/reviewer/customer_service).
+- **GET** `/v1/orders` — List orders (scoped to user's own orders or assignments).
+- **GET** `/v1/orders/{id}` — Get order details (ownership enforced).
+
+### 5.2 Create Conversation Message
+
+- **POST** `/v1/orders/{order_id}/messages`
 - **Description:** Add a message to an order-level conversation.
 - **Request Body:**
   ```json
   {
-    "content": "string"
+    "message": "string"
   }
   ```
 - **Behaviour:**
@@ -244,26 +251,33 @@ Each of these should support filters by indicator, time range, and relevant dime
     - Per-user rate limit of 20 messages per minute.
     - Sensitive word interception (blocked messages are not delivered but are logged).
 
-### 5.2 List Conversation Messages
+### 5.3 List Conversation Messages
 
-- **GET** `/api/v1/communication/orders/{order_id}/messages`
-- **Description:** List messages for the order, including read status.
+- **GET** `/v1/orders/{order_id}/messages`
+- **Description:** List messages for the order (ownership enforced), including read status.
 
-### 5.3 Update Read Status
+### 5.4 Update Read Status
 
-- **PUT** `/api/v1/communication/orders/{order_id}/messages/{message_id}/read`
+- **PATCH** `/v1/orders/{order_id}/messages/{message_id}/read`
 - **Description:** Mark a message as read for the current user.
 
-### 5.4 Transfer Ticket
+### 5.5 Transfer Ticket
 
-- **POST** `/api/v1/communication/orders/{order_id}/transfer`
-- **Description:** Transfer responsibility for the conversation/ticket.
+- **POST** `/v1/orders/{order_id}/transfer`
+- **Description:** Transfer responsibility for the conversation/ticket (ownership enforced).
 - **Request Body:**
   ```json
   {
-    "target_user_id": "string_or_id"
+    "transfer_to_user_id": 123,
+    "reason": "optional reason"
   }
   ```
+
+### 5.6 Templates
+
+- **POST** `/v1/templates` — Create message template (admin/customer_service).
+- **GET** `/v1/templates` — List templates.
+- **POST** `/v1/orders/{order_id}/templates/{template_id}` — Send template into order conversation.
 
 ---
 
@@ -271,7 +285,7 @@ Each of these should support filters by indicator, time range, and relevant dime
 
 ### 6.1 Create Result
 
-- **POST** `/api/v1/results`
+- **POST** `/v1/results`
 - **Description:** Create a new result entry (paper, project, or patent) in `draft` status.
 - **Request Body:**
   ```json
@@ -283,12 +297,12 @@ Each of these should support filters by indicator, time range, and relevant dime
 
 ### 6.2 Update Result Fields
 
-- **PUT** `/api/v1/results/{id}`
+- **PUT** `/v1/results/{id}`
 - **Description:** Update result fields while in allowed states (e.g. draft, returned).
 
 ### 6.3 Change Result Status
 
-- **POST** `/api/v1/results/{id}/status`
+- **PATCH** `/v1/results/{id}/transition`
 - **Description:** Change result status following:
   - `draft → submitted → returned → approved → archived`
 - **Request Body:**
@@ -306,7 +320,7 @@ Each of these should support filters by indicator, time range, and relevant dime
 
 ### 6.4 Append Retrospective Notes
 
-- **POST** `/api/v1/results/{id}/notes`
+- **POST** `/v1/results/{id}/notes`
 - **Description:** Append a note to an archived result.
 
 ---
@@ -315,7 +329,7 @@ Each of these should support filters by indicator, time range, and relevant dime
 
 ### 7.1 Generate Tasks
 
-- **POST** `/api/v1/tasks/generate`
+- **POST** `/v1/tasks/generate`
 - **Description:** Generate evaluation tasks based on objects and cycles.
 - **Request Body:**
   ```json
@@ -329,17 +343,17 @@ Each of these should support filters by indicator, time range, and relevant dime
 
 ### 7.2 List Tasks
 
-- **GET** `/api/v1/tasks`
+- **GET** `/v1/tasks`
 - **Description:** List tasks filtered by status, object, or cycle.
 
 ### 7.3 Submit Task
 
-- **POST** `/api/v1/tasks/{id}/submit`
+- **POST** `/v1/tasks/{id}/submit`
 - **Description:** Submit a task for review.
 
 ### 7.4 Review Task
 
-- **POST** `/api/v1/tasks/{id}/review`
+- **POST** `/v1/tasks/{id}/review`
 - **Description:** Move task to reviewed state, following the prompt’s review node semantics.
 
 ### 7.5 Overdue Management
@@ -352,14 +366,14 @@ Each of these should support filters by indicator, time range, and relevant dime
 
 ### 8.1 Global Audit Log
 
-- **GET** `/api/v1/audit/logs`
+- **GET** `/v1/audit/logs`
 - **Description:** Administrative endpoint to view audit logs of operations.
 - **Filters:**
   - By user, resource, action, time period.
 
 ### 8.2 Capacity Notifications
 
-- **GET** `/api/v1/system/capacity`
+- **GET** `/v1/system/capacity`
 - **Description:** View current capacity-related information (e.g., disk usage).
 - Threshold logic (e.g., disk > 80%) is implemented internally and triggers notifications or entries accessible through this endpoint.
 
@@ -369,7 +383,7 @@ Each of these should support filters by indicator, time range, and relevant dime
 
 ### 9.1 Health Check
 
-- **GET** `/api/v1/health`
+- **GET** `/v1/health`
 - **Description:** Returns basic health information indicating that the API and database are reachable.
 - **Response:**
   ```json

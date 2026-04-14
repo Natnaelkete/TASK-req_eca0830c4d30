@@ -49,11 +49,11 @@ func TestRegisterHandler_ValidationErrors(t *testing.T) {
 		name string
 		body map[string]string
 	}{
-		{"missing username", map[string]string{"email": "a@b.com", "password": "123456"}},
-		{"short username", map[string]string{"username": "ab", "email": "a@b.com", "password": "123456"}},
-		{"bad email", map[string]string{"username": "user1", "email": "not-email", "password": "123456"}},
-		{"short password", map[string]string{"username": "user1", "email": "a@b.com", "password": "12345"}},
-		{"invalid role", map[string]string{"username": "user1", "email": "a@b.com", "password": "123456", "role": "superadmin"}},
+		{"missing username", map[string]string{"email": "a@b.com", "password": "pass1234"}},
+		{"short username", map[string]string{"username": "ab", "email": "a@b.com", "password": "pass1234"}},
+		{"bad email", map[string]string{"username": "user1", "email": "not-email", "password": "pass1234"}},
+		{"short password", map[string]string{"username": "user1", "email": "a@b.com", "password": "pass1"}},
+		{"invalid role", map[string]string{"username": "user1", "email": "a@b.com", "password": "pass1234", "role": "superadmin"}},
 	}
 
 	for _, tt := range tests {

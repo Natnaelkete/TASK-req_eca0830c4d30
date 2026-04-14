@@ -4,14 +4,15 @@
 CREATE TABLE IF NOT EXISTS `users` (
     `id`            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     `username`      VARCHAR(100)    NOT NULL,
-    `email`         VARCHAR(255)    NOT NULL,
+    `email`         VARCHAR(500)    NOT NULL,
+    `email_hash`    VARCHAR(64)     NOT NULL DEFAULT '',
     `password_hash` VARCHAR(255)    NOT NULL,
     `role`          VARCHAR(50)     NOT NULL DEFAULT 'researcher',
     `created_at`    DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updated_at`    DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
     PRIMARY KEY (`id`),
     UNIQUE INDEX `idx_users_username` (`username`),
-    UNIQUE INDEX `idx_users_email` (`email`)
+    UNIQUE INDEX `idx_users_email_hash` (`email_hash`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `plots` (
@@ -61,17 +62,26 @@ CREATE TABLE IF NOT EXISTS `metrics` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `tasks` (
-    `id`          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-    `title`       VARCHAR(255)    NOT NULL,
-    `description` TEXT            NULL,
-    `status`      VARCHAR(50)     NOT NULL DEFAULT 'pending',
-    `assigned_to` BIGINT UNSIGNED NULL DEFAULT 0,
-    `due_date`    DATETIME(3)     NULL,
-    `created_at`  DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-    `updated_at`  DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    `id`           BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `title`        VARCHAR(255)    NOT NULL,
+    `description`  TEXT            NULL,
+    `object_id`    BIGINT UNSIGNED NOT NULL,
+    `object_type`  VARCHAR(100)    NOT NULL,
+    `cycle_type`   VARCHAR(50)     NULL,
+    `status`       VARCHAR(50)     NOT NULL DEFAULT 'pending',
+    `assigned_to`  BIGINT UNSIGNED NULL DEFAULT 0,
+    `reviewer_id`  BIGINT UNSIGNED NULL,
+    `due_start`    DATETIME(3)     NULL,
+    `due_end`      DATETIME(3)     NULL,
+    `submitted_at` DATETIME(3)     NULL,
+    `overdue_at`   DATETIME(3)     NULL,
+    `created_at`   DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updated_at`   DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
     PRIMARY KEY (`id`),
     INDEX `idx_tasks_status` (`status`),
-    INDEX `idx_tasks_assigned` (`assigned_to`)
+    INDEX `idx_tasks_assigned` (`assigned_to`),
+    INDEX `idx_tasks_object` (`object_id`),
+    INDEX `idx_tasks_reviewer` (`reviewer_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `audit_logs` (
@@ -147,17 +157,27 @@ CREATE TABLE IF NOT EXISTS `dashboard_configs` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `results` (
-    `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-    `plot_id`    BIGINT UNSIGNED NOT NULL,
-    `task_id`    BIGINT UNSIGNED NULL,
-    `title`      VARCHAR(255)    NOT NULL,
-    `summary`    TEXT            NULL,
-    `data`       TEXT            NULL,
-    `created_by` BIGINT UNSIGNED NOT NULL,
-    `created_at` DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-    `updated_at` DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    `id`                  BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `type`                VARCHAR(50)     NOT NULL,
+    `plot_id`             BIGINT UNSIGNED NOT NULL,
+    `task_id`             BIGINT UNSIGNED NULL,
+    `title`               VARCHAR(255)    NOT NULL,
+    `summary`             TEXT            NULL,
+    `fields`              TEXT            NULL,
+    `status`              VARCHAR(50)     NOT NULL DEFAULT 'draft',
+    `submitter_id`        BIGINT UNSIGNED NOT NULL,
+    `notes`               TEXT            NULL,
+    `archived_at`         DATETIME(3)     NULL,
+    `invalidated_reason`  TEXT            NULL,
+    `invalidated_by`      BIGINT UNSIGNED NULL,
+    `invalidated_at`      DATETIME(3)     NULL,
+    `created_by`          BIGINT UNSIGNED NOT NULL,
+    `created_at`          DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updated_at`          DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
     PRIMARY KEY (`id`),
     INDEX `idx_results_plot` (`plot_id`),
     INDEX `idx_results_task` (`task_id`),
+    INDEX `idx_results_status` (`status`),
+    INDEX `idx_results_submitter` (`submitter_id`),
     INDEX `idx_results_created_by` (`created_by`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

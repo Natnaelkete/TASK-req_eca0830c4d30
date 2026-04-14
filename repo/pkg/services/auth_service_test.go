@@ -10,9 +10,10 @@ import (
 )
 
 const testSecret = "test-secret-key-for-unit-tests"
+const testEncKey = "0123456789abcdef0123456789abcdef"
 
 func TestGenerateAndValidateToken(t *testing.T) {
-	svc := NewAuthService(nil, testSecret)
+	svc := NewAuthService(nil, testSecret, testEncKey)
 
 	now := time.Now()
 	claims := Claims{
@@ -37,7 +38,7 @@ func TestGenerateAndValidateToken(t *testing.T) {
 }
 
 func TestValidateToken_Expired(t *testing.T) {
-	svc := NewAuthService(nil, testSecret)
+	svc := NewAuthService(nil, testSecret, testEncKey)
 
 	past := time.Now().Add(-2 * time.Hour)
 	claims := Claims{
@@ -59,7 +60,7 @@ func TestValidateToken_Expired(t *testing.T) {
 }
 
 func TestValidateToken_WrongSecret(t *testing.T) {
-	svc := NewAuthService(nil, testSecret)
+	svc := NewAuthService(nil, testSecret, testEncKey)
 
 	now := time.Now()
 	claims := Claims{
@@ -81,13 +82,35 @@ func TestValidateToken_WrongSecret(t *testing.T) {
 }
 
 func TestValidateToken_InvalidString(t *testing.T) {
-	svc := NewAuthService(nil, testSecret)
+	svc := NewAuthService(nil, testSecret, testEncKey)
 	_, err := svc.ValidateToken("not-a-jwt")
 	assert.ErrorIs(t, err, ErrInvalidToken)
 }
 
 func TestNewAuthService(t *testing.T) {
-	svc := NewAuthService(nil, "secret")
+	svc := NewAuthService(nil, "secret", testEncKey)
 	assert.NotNil(t, svc)
 	assert.Equal(t, []byte("secret"), svc.jwtSecret)
+}
+
+func TestValidatePasswordComplexity(t *testing.T) {
+	tests := []struct {
+		password string
+		wantErr  bool
+	}{
+		{"abcdefgh", true},       // no digits
+		{"12345678", true},       // no letters
+		{"abc12345", false},      // valid
+		{"Password1", false},     // valid
+		{"ab1", false},           // short but has both (length validated by binding)
+		{"!!!!!!!!!", true},      // no letters or digits
+	}
+	for _, tt := range tests {
+		err := validatePasswordComplexity(tt.password)
+		if tt.wantErr {
+			assert.Error(t, err, "password=%s", tt.password)
+		} else {
+			assert.NoError(t, err, "password=%s", tt.password)
+		}
+	}
 }

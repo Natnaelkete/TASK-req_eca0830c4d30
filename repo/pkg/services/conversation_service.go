@@ -14,6 +14,7 @@ import (
 
 var (
 	ErrOrderNotFound       = errors.New("order not found")
+	ErrOrderForbidden      = errors.New("not authorized to access this order")
 	ErrConversationNotFound = errors.New("conversation not found")
 	ErrRateLimitExceeded   = errors.New("rate limit exceeded: max 20 messages per minute")
 	ErrSensitiveWord       = errors.New("message contains sensitive content and was blocked")
@@ -59,13 +60,32 @@ func (s *ConversationService) CreateOrderWithTitle(ctx context.Context, research
 	return &order, nil
 }
 
-func (s *ConversationService) GetOrder(ctx context.Context, id uint) (*models.Order, error) {
+func (s *ConversationService) GetOrder(ctx context.Context, id, userID uint, role string) (*models.Order, error) {
 	var order models.Order
 	if err := s.db.WithContext(ctx).First(&order, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrOrderNotFound
 		}
 		return nil, fmt.Errorf("get order: %w", err)
+	}
+	// Object-level check: only owner, assigned user, or admin/customer_service can access
+	if role != "admin" && role != "customer_service" && order.ResearcherID != userID && order.AssignedTo != userID {
+		return nil, ErrOrderForbidden
+	}
+	return &order, nil
+}
+
+// checkOrderAccess verifies user has access to the given order.
+func (s *ConversationService) checkOrderAccess(ctx context.Context, orderID, userID uint, role string) (*models.Order, error) {
+	var order models.Order
+	if err := s.db.WithContext(ctx).First(&order, orderID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrOrderNotFound
+		}
+		return nil, fmt.Errorf("get order: %w", err)
+	}
+	if role != "admin" && role != "customer_service" && order.ResearcherID != userID && order.AssignedTo != userID {
+		return nil, ErrOrderForbidden
 	}
 	return &order, nil
 }
@@ -130,7 +150,7 @@ type PostMessageInput struct {
 
 // PostMessage posts a message to an order conversation thread.
 // Enforces rate limiting (20/min) and sensitive word filtering.
-func (s *ConversationService) PostMessage(ctx context.Context, orderID, userID uint, in PostMessageInput) (*models.Conversation, error) {
+func (s *ConversationService) PostMessage(ctx context.Context, orderID, userID uint, role string, in PostMessageInput) (*models.Conversation, error) {
 	// Rate limit check
 	if !s.limiter.Allow(userID) {
 		return nil, ErrRateLimitExceeded
@@ -149,13 +169,9 @@ func (s *ConversationService) PostMessage(ctx context.Context, orderID, userID u
 		return nil, ErrSensitiveWord
 	}
 
-	// Verify order exists
-	var order models.Order
-	if err := s.db.WithContext(ctx).First(&order, orderID).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrOrderNotFound
-		}
-		return nil, fmt.Errorf("check order: %w", err)
+	// Verify order exists and user has access
+	if _, err := s.checkOrderAccess(ctx, orderID, userID, role); err != nil {
+		return nil, err
 	}
 
 	conv := models.Conversation{
@@ -170,7 +186,12 @@ func (s *ConversationService) PostMessage(ctx context.Context, orderID, userID u
 }
 
 // ListMessages returns paginated conversation messages for an order.
-func (s *ConversationService) ListMessages(ctx context.Context, orderID uint, page, pageSize int) ([]models.Conversation, int64, error) {
+func (s *ConversationService) ListMessages(ctx context.Context, orderID, userID uint, role string, page, pageSize int) ([]models.Conversation, int64, error) {
+	// Verify access to order
+	if _, err := s.checkOrderAccess(ctx, orderID, userID, role); err != nil {
+		return nil, 0, err
+	}
+
 	if page < 1 {
 		page = 1
 	}
@@ -217,17 +238,14 @@ type TransferInput struct {
 }
 
 // TransferTicket transfers an order to another user and records the transfer.
-func (s *ConversationService) TransferTicket(ctx context.Context, orderID, fromUserID uint, in TransferInput) (*models.Conversation, error) {
-	var order models.Order
-	if err := s.db.WithContext(ctx).First(&order, orderID).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrOrderNotFound
-		}
-		return nil, fmt.Errorf("get order for transfer: %w", err)
+func (s *ConversationService) TransferTicket(ctx context.Context, orderID, fromUserID uint, role string, in TransferInput) (*models.Conversation, error) {
+	order, err := s.checkOrderAccess(ctx, orderID, fromUserID, role)
+	if err != nil {
+		return nil, err
 	}
 
 	// Update order assignment
-	if err := s.db.WithContext(ctx).Model(&order).Update("assigned_to", in.TransferToUserID).Error; err != nil {
+	if err := s.db.WithContext(ctx).Model(order).Update("assigned_to", in.TransferToUserID).Error; err != nil {
 		return nil, fmt.Errorf("update order assignment: %w", err)
 	}
 
@@ -276,7 +294,7 @@ func (s *ConversationService) ListTemplates(ctx context.Context) ([]models.Templ
 }
 
 // SendTemplate sends a template message into an order conversation.
-func (s *ConversationService) SendTemplate(ctx context.Context, orderID, userID, templateID uint) (*models.Conversation, error) {
+func (s *ConversationService) SendTemplate(ctx context.Context, orderID, userID, templateID uint, role string) (*models.Conversation, error) {
 	var tmpl models.TemplateMessage
 	if err := s.db.WithContext(ctx).First(&tmpl, templateID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -285,7 +303,7 @@ func (s *ConversationService) SendTemplate(ctx context.Context, orderID, userID,
 		return nil, fmt.Errorf("get template: %w", err)
 	}
 
-	return s.PostMessage(ctx, orderID, userID, PostMessageInput{Message: tmpl.Content})
+	return s.PostMessage(ctx, orderID, userID, role, PostMessageInput{Message: tmpl.Content})
 }
 
 // --- Sensitive Word Helpers ---
