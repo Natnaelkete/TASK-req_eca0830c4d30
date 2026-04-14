@@ -100,6 +100,21 @@ func TestErrMonitoringDataNotFound(t *testing.T) {
 	assert.EqualError(t, ErrMonitoringDataNotFound, "monitoring data not found")
 }
 
+func TestErrMonitoringDataForbidden(t *testing.T) {
+	assert.EqualError(t, ErrMonitoringDataForbidden, "not authorized to access this monitoring data")
+}
+
+func TestMonitoringDataListParams_IsolationFields(t *testing.T) {
+	p := MonitoringDataListParams{
+		Page:     1,
+		PageSize: 20,
+		UserID:   42,
+		Role:     "researcher",
+	}
+	assert.Equal(t, uint(42), p.UserID)
+	assert.Equal(t, "researcher", p.Role)
+}
+
 func TestIsDuplicateKeyError(t *testing.T) {
 	tests := []struct {
 		msg    string

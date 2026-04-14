@@ -32,7 +32,11 @@ func TestResultHandler_Get_InvalidID(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	h := NewResultHandler(nil)
-	r.GET("/v1/results/:id", h.Get)
+	r.GET("/v1/results/:id", func(c *gin.Context) {
+		c.Set("user_id", uint(1))
+		c.Set("role", "researcher")
+		h.Get(c)
+	})
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("GET", "/v1/results/abc", nil)

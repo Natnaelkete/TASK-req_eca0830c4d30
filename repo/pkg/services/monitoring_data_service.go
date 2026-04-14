@@ -12,7 +12,10 @@ import (
 	"gorm.io/gorm"
 )
 
-var ErrMonitoringDataNotFound = errors.New("monitoring data not found")
+var (
+	ErrMonitoringDataNotFound  = errors.New("monitoring data not found")
+	ErrMonitoringDataForbidden = errors.New("not authorized to access this monitoring data")
+)
 
 // MonitoringDataService handles batch ingestion, aggregation, curves, and trends.
 type MonitoringDataService struct {
@@ -439,13 +442,23 @@ func (s *MonitoringDataService) List(ctx context.Context, p MonitoringDataListPa
 	}, nil
 }
 
-func (s *MonitoringDataService) GetByID(ctx context.Context, id uint) (*models.MonitoringData, error) {
+func (s *MonitoringDataService) GetByID(ctx context.Context, id, userID uint, role string) (*models.MonitoringData, error) {
 	var record models.MonitoringData
 	if err := s.db.WithContext(ctx).First(&record, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrMonitoringDataNotFound
 		}
 		return nil, fmt.Errorf("get monitoring data: %w", err)
+	}
+	// Object-level isolation: non-admin users can only access data from their own plots
+	if role != "admin" && userID > 0 {
+		var plot models.Plot
+		if err := s.db.WithContext(ctx).First(&plot, record.PlotID).Error; err != nil {
+			return nil, ErrMonitoringDataForbidden
+		}
+		if plot.UserID != userID {
+			return nil, ErrMonitoringDataForbidden
+		}
 	}
 	return &record, nil
 }

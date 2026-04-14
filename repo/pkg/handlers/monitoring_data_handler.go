@@ -75,10 +75,16 @@ func (h *MonitoringDataHandler) Get(c *gin.Context) {
 		return
 	}
 
-	record, err := h.monDataSvc.GetByID(c.Request.Context(), uint(id))
+	userID, _ := c.Get("user_id")
+	role, _ := c.Get("role")
+	record, err := h.monDataSvc.GetByID(c.Request.Context(), uint(id), userID.(uint), role.(string))
 	if err != nil {
 		if errors.Is(err, services.ErrMonitoringDataNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "monitoring data not found"})
+			return
+		}
+		if errors.Is(err, services.ErrMonitoringDataForbidden) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "not authorized to access this monitoring data"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get monitoring data"})

@@ -54,3 +54,18 @@ func TestErrDeviceNotFound(t *testing.T) {
 func TestErrDuplicateSerial(t *testing.T) {
 	assert.EqualError(t, ErrDuplicateSerial, "serial number already exists")
 }
+
+func TestErrDeviceForbidden(t *testing.T) {
+	assert.EqualError(t, ErrDeviceForbidden, "not authorized to access this device")
+}
+
+func TestDeviceListParams_IsolationFields(t *testing.T) {
+	p := DeviceListParams{
+		Page:     1,
+		PageSize: 20,
+		UserID:   42,
+		Role:     "researcher",
+	}
+	assert.Equal(t, uint(42), p.UserID)
+	assert.Equal(t, "researcher", p.Role)
+}

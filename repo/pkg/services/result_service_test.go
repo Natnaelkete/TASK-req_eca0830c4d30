@@ -89,3 +89,18 @@ func TestErrInvalidationNoReason(t *testing.T) {
 func TestErrFieldValidationFailed(t *testing.T) {
 	assert.EqualError(t, ErrFieldValidationFailed, "field validation failed")
 }
+
+func TestErrResultForbidden(t *testing.T) {
+	assert.EqualError(t, ErrResultForbidden, "not authorized to access this result")
+}
+
+func TestResultListParams_IsolationFields(t *testing.T) {
+	p := ResultListParams{
+		Page:     1,
+		PageSize: 20,
+		UserID:   42,
+		Role:     "researcher",
+	}
+	assert.Equal(t, uint(42), p.UserID)
+	assert.Equal(t, "researcher", p.Role)
+}
