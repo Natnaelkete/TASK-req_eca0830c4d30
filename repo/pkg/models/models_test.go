@@ -137,3 +137,86 @@ func TestAlertStruct(t *testing.T) {
 	assert.Equal(t, 35.0, a.Value)
 	assert.False(t, a.Resolved)
 }
+
+func TestMessageTableName(t *testing.T) {
+	assert.Equal(t, "messages", Message{}.TableName())
+}
+
+func TestMessageStruct(t *testing.T) {
+	plotID := uint(1)
+	m := Message{
+		ID:         1,
+		SenderID:   1,
+		ReceiverID: 2,
+		PlotID:     &plotID,
+		Content:    "Check field A",
+		Read:       false,
+	}
+	assert.Equal(t, uint(1), m.SenderID)
+	assert.Equal(t, "Check field A", m.Content)
+	assert.False(t, m.Read)
+}
+
+func TestResultTableName(t *testing.T) {
+	assert.Equal(t, "results", Result{}.TableName())
+}
+
+func TestResultStruct(t *testing.T) {
+	taskID := uint(1)
+	r := Result{
+		ID:        1,
+		PlotID:    1,
+		TaskID:    &taskID,
+		Title:     "Yield Analysis",
+		Summary:   "Positive results",
+		Data:      `{"yield":500}`,
+		CreatedBy: 1,
+	}
+	assert.Equal(t, "Yield Analysis", r.Title)
+	assert.Equal(t, uint(1), r.PlotID)
+	assert.NotNil(t, r.TaskID)
+}
+
+func TestMonitoringDataTableName(t *testing.T) {
+	assert.Equal(t, "monitoring_data", MonitoringData{}.TableName())
+}
+
+func TestMonitoringDataStruct(t *testing.T) {
+	now := time.Now()
+	m := MonitoringData{
+		ID:         1,
+		SourceID:   "sensor-001-20260115",
+		DeviceID:   5,
+		PlotID:     3,
+		MetricCode: "temperature",
+		Value:      23.5,
+		Unit:       "celsius",
+		EventTime:  now,
+		Tags:       `{"location":"field-A","zone":"north"}`,
+	}
+	assert.Equal(t, "sensor-001-20260115", m.SourceID)
+	assert.Equal(t, uint(5), m.DeviceID)
+	assert.Equal(t, uint(3), m.PlotID)
+	assert.Equal(t, "temperature", m.MetricCode)
+	assert.Equal(t, 23.5, m.Value)
+	assert.Equal(t, "celsius", m.Unit)
+	assert.Equal(t, now, m.EventTime)
+	assert.Contains(t, m.Tags, "field-A")
+}
+
+func TestDashboardConfigTableName(t *testing.T) {
+	assert.Equal(t, "dashboard_configs", DashboardConfig{}.TableName())
+}
+
+func TestDashboardConfigStruct(t *testing.T) {
+	cfg := DashboardConfig{
+		ID:     1,
+		UserID: 2,
+		Name:   "My Dashboard",
+		Config: `{"plots":[1,2],"metrics":["temperature","humidity"],"time_window":"24h","chart_type":"line"}`,
+	}
+	assert.Equal(t, uint(2), cfg.UserID)
+	assert.Equal(t, "My Dashboard", cfg.Name)
+	assert.Contains(t, cfg.Config, "temperature")
+	assert.Contains(t, cfg.Config, "line")
+}

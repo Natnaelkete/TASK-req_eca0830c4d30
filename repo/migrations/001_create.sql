@@ -101,3 +101,63 @@ CREATE TABLE IF NOT EXISTS `alerts` (
     INDEX `idx_alerts_level` (`level`),
     CONSTRAINT `fk_alerts_device` FOREIGN KEY (`device_id`) REFERENCES `devices` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `messages` (
+    `id`          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `sender_id`   BIGINT UNSIGNED NOT NULL,
+    `receiver_id` BIGINT UNSIGNED NOT NULL,
+    `plot_id`     BIGINT UNSIGNED NULL,
+    `content`     TEXT            NOT NULL,
+    `read`        TINYINT(1)      NOT NULL DEFAULT 0,
+    `created_at`  DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    PRIMARY KEY (`id`),
+    INDEX `idx_messages_sender` (`sender_id`),
+    INDEX `idx_messages_receiver` (`receiver_id`),
+    INDEX `idx_messages_plot` (`plot_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `monitoring_data` (
+    `id`          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `source_id`   VARCHAR(255)    NOT NULL,
+    `device_id`   BIGINT UNSIGNED NOT NULL,
+    `plot_id`     BIGINT UNSIGNED NOT NULL,
+    `metric_code` VARCHAR(100)    NOT NULL,
+    `value`       DOUBLE          NOT NULL,
+    `unit`        VARCHAR(50)     NULL,
+    `event_time`  DATETIME(3)     NOT NULL,
+    `tags`        TEXT            NULL,
+    `created_at`  DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    PRIMARY KEY (`id`),
+    UNIQUE INDEX `idx_monitoring_idempotent` (`source_id`, `metric_code`, `event_time`),
+    INDEX `idx_monitoring_core` (`device_id`, `plot_id`, `metric_code`, `event_time`),
+    CONSTRAINT `fk_monitoring_device` FOREIGN KEY (`device_id`) REFERENCES `devices` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_monitoring_plot`   FOREIGN KEY (`plot_id`)   REFERENCES `plots` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `dashboard_configs` (
+    `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `user_id`    BIGINT UNSIGNED NOT NULL,
+    `name`       VARCHAR(255)    NOT NULL,
+    `config`     TEXT            NOT NULL,
+    `created_at` DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updated_at` DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    PRIMARY KEY (`id`),
+    INDEX `idx_dashboard_user` (`user_id`),
+    CONSTRAINT `fk_dashboard_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `results` (
+    `id`         BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `plot_id`    BIGINT UNSIGNED NOT NULL,
+    `task_id`    BIGINT UNSIGNED NULL,
+    `title`      VARCHAR(255)    NOT NULL,
+    `summary`    TEXT            NULL,
+    `data`       TEXT            NULL,
+    `created_by` BIGINT UNSIGNED NOT NULL,
+    `created_at` DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updated_at` DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    PRIMARY KEY (`id`),
+    INDEX `idx_results_plot` (`plot_id`),
+    INDEX `idx_results_task` (`task_id`),
+    INDEX `idx_results_created_by` (`created_by`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

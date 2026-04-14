@@ -6,6 +6,7 @@ This document describes the architecture and key design decisions for the Agricu
 
 ### 1.1 High-Level Structure
 
+
 The system is organized into layers:
 
 - **API Layer (Handlers / Routers)**  
@@ -14,7 +15,7 @@ The system is organized into layers:
   - Contains only thin logic and delegates to services.
 
 - **Service Layer (Business Logic)**  
-  - Implements domain-specific logic for:
+  - Implements domain-specific logic for:start
     - Monitoring domain
     - Analysis (indicator system and master data)
     - Communication (order conversations and notifications)

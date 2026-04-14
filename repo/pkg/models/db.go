@@ -57,6 +57,10 @@ func InitDB(dsn string) (*gorm.DB, error) {
 		&Task{},
 		&AuditLog{},
 		&Alert{},
+		&Message{},
+		&Result{},
+		&MonitoringData{},
+		&DashboardConfig{},
 	); err != nil {
 		return nil, fmt.Errorf("auto-migrate: %w", err)
 	}

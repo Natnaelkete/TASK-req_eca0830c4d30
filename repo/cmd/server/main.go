@@ -76,6 +76,12 @@ func setupRouter(db *gorm.DB, cfg *config.Config, queueSvc *services.QueueServic
 	deviceSvc := services.NewDeviceService(db)
 	metricSvc := services.NewMetricService(db)
 	monitorSvc := services.NewMonitorService(db, queueSvc)
+	monDataSvc := services.NewMonitoringDataService(db, queueSvc)
+	dashSvc := services.NewDashboardService(db)
+	analysisSvc := services.NewAnalysisService(db)
+	taskSvc := services.NewTaskService(db)
+	chatSvc := services.NewChatService(db)
+	resultSvc := services.NewResultService(db)
 
 	// Handlers
 	authH := handlers.NewAuthHandler(authSvc)
@@ -83,6 +89,12 @@ func setupRouter(db *gorm.DB, cfg *config.Config, queueSvc *services.QueueServic
 	deviceH := handlers.NewDeviceHandler(deviceSvc)
 	metricH := handlers.NewMetricHandler(metricSvc)
 	monitorH := handlers.NewMonitorHandler(monitorSvc, queueSvc)
+	monDataH := handlers.NewMonitoringDataHandler(monDataSvc, queueSvc)
+	dashH := handlers.NewDashboardHandler(dashSvc)
+	analysisH := handlers.NewAnalysisHandler(analysisSvc)
+	taskH := handlers.NewTaskHandler(taskSvc)
+	chatH := handlers.NewChatHandler(chatSvc)
+	resultH := handlers.NewResultHandler(resultSvc)
 
 	// Auth routes (public)
 	v1 := r.Group("/v1")
@@ -127,7 +139,7 @@ func setupRouter(db *gorm.DB, cfg *config.Config, queueSvc *services.QueueServic
 			metrics.DELETE("/:id", metricH.Delete)
 		}
 
-		// Monitoring
+		// Monitoring (device health & alerts)
 		monitor := protected.Group("/monitor")
 		{
 			monitor.POST("/device", monitorH.CheckDevice)
@@ -136,6 +148,66 @@ func setupRouter(db *gorm.DB, cfg *config.Config, queueSvc *services.QueueServic
 			monitor.GET("/queue/status", monitorH.QueueStats)
 			monitor.GET("/alerts", monitorH.ListAlerts)
 			monitor.PATCH("/alerts/:id/resolve", monitorH.ResolveAlert)
+		}
+
+		// Monitoring Data (batch ingest, queries, aggregation, curves, trends, export)
+		monitoring := protected.Group("/monitoring")
+		{
+			monitoring.POST("/ingest", monDataH.BatchIngest)
+			monitoring.GET("/data", monDataH.List)
+			monitoring.GET("/data/:id", monDataH.Get)
+			monitoring.POST("/aggregate", monDataH.Aggregate)
+			monitoring.POST("/curve", monDataH.RealtimeCurve)
+			monitoring.POST("/trends", monDataH.Trends)
+			monitoring.GET("/export/json", monDataH.ExportJSON)
+			monitoring.GET("/export/csv", monDataH.ExportCSV)
+			monitoring.GET("/jobs/:id", monDataH.JobStatus)
+		}
+
+		// Dashboards
+		dashboards := protected.Group("/dashboards")
+		{
+			dashboards.POST("", dashH.Create)
+			dashboards.GET("", dashH.List)
+			dashboards.GET("/:id", dashH.Get)
+			dashboards.PUT("/:id", dashH.Update)
+			dashboards.DELETE("/:id", dashH.Delete)
+		}
+
+		// Analysis (trends, funnels, retention with drill-down)
+		analysis := protected.Group("/analysis")
+		{
+			analysis.POST("/trends", analysisH.Trends)
+			analysis.POST("/funnels", analysisH.Funnels)
+			analysis.POST("/retention", analysisH.Retention)
+		}
+
+		// Tasks
+		tasks := protected.Group("/tasks")
+		{
+			tasks.POST("", taskH.Create)
+			tasks.GET("", taskH.List)
+			tasks.GET("/:id", taskH.Get)
+			tasks.PUT("/:id", taskH.Update)
+			tasks.DELETE("/:id", taskH.Delete)
+		}
+
+		// Chat
+		chat := protected.Group("/chat")
+		{
+			chat.POST("", chatH.Send)
+			chat.GET("", chatH.List)
+			chat.PATCH("/:id/read", chatH.MarkRead)
+		}
+
+		// Results
+		results := protected.Group("/results")
+		{
+			results.POST("", resultH.Create)
+			results.GET("", resultH.List)
+			results.GET("/:id", resultH.Get)
+			results.PUT("/:id", resultH.Update)
+			results.DELETE("/:id", resultH.Delete)
 		}
 	}
 
