@@ -85,3 +85,19 @@ CREATE TABLE IF NOT EXISTS `audit_logs` (
     PRIMARY KEY (`id`),
     INDEX `idx_audit_user_id` (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `alerts` (
+    `id`          BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `device_id`   BIGINT UNSIGNED NOT NULL,
+    `metric_type` VARCHAR(100)    NOT NULL,
+    `value`       DOUBLE          NOT NULL,
+    `threshold`   DOUBLE          NOT NULL,
+    `level`       VARCHAR(50)     NOT NULL DEFAULT 'warning',
+    `message`     VARCHAR(500)    NULL,
+    `resolved`    TINYINT(1)      NOT NULL DEFAULT 0,
+    `created_at`  DATETIME(3)     NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    PRIMARY KEY (`id`),
+    INDEX `idx_alerts_device_id` (`device_id`),
+    INDEX `idx_alerts_level` (`level`),
+    CONSTRAINT `fk_alerts_device` FOREIGN KEY (`device_id`) REFERENCES `devices` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

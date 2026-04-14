@@ -117,3 +117,23 @@ func TestAuditLogStruct(t *testing.T) {
 	assert.Equal(t, "CREATE", a.Action)
 	assert.Equal(t, "plots", a.Resource)
 }
+
+func TestAlertTableName(t *testing.T) {
+	assert.Equal(t, "alerts", Alert{}.TableName())
+}
+
+func TestAlertStruct(t *testing.T) {
+	a := Alert{
+		ID:         1,
+		DeviceID:   2,
+		MetricType: "temperature",
+		Value:      35.0,
+		Threshold:  30.0,
+		Level:      "critical",
+		Message:    "threshold exceeded",
+		Resolved:   false,
+	}
+	assert.Equal(t, "critical", a.Level)
+	assert.Equal(t, 35.0, a.Value)
+	assert.False(t, a.Resolved)
+}

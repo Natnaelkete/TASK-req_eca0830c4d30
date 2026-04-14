@@ -32,3 +32,6 @@ vendor/
 
 # Docker
 *.log
+
+# Claude
+.claude/

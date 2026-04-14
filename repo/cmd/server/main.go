@@ -30,7 +30,9 @@ func main() {
 		log.Fatalf("init db: %v", err)
 	}
 
-	router := setupRouter(db, cfg)
+	queueSvc := services.NewQueueService(100, 4)
+
+	router := setupRouter(db, cfg, queueSvc)
 
 	srv := &http.Server{
 		Addr:         ":" + cfg.ServerPort,
@@ -52,6 +54,7 @@ func main() {
 	<-quit
 	log.Println("shutting down server...")
 
+	queueSvc.Shutdown()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
@@ -60,7 +63,7 @@ func main() {
 	log.Println("server exited")
 }
 
-func setupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
+func setupRouter(db *gorm.DB, cfg *config.Config, queueSvc *services.QueueService) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery())
@@ -72,12 +75,14 @@ func setupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 	plotSvc := services.NewPlotService(db)
 	deviceSvc := services.NewDeviceService(db)
 	metricSvc := services.NewMetricService(db)
+	monitorSvc := services.NewMonitorService(db, queueSvc)
 
 	// Handlers
 	authH := handlers.NewAuthHandler(authSvc)
 	plotH := handlers.NewPlotHandler(plotSvc)
 	deviceH := handlers.NewDeviceHandler(deviceSvc)
 	metricH := handlers.NewMetricHandler(metricSvc)
+	monitorH := handlers.NewMonitorHandler(monitorSvc, queueSvc)
 
 	// Auth routes (public)
 	v1 := r.Group("/v1")
@@ -120,6 +125,17 @@ func setupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 			metrics.GET("", metricH.List)
 			metrics.GET("/:id", metricH.Get)
 			metrics.DELETE("/:id", metricH.Delete)
+		}
+
+		// Monitoring
+		monitor := protected.Group("/monitor")
+		{
+			monitor.POST("/device", monitorH.CheckDevice)
+			monitor.POST("/threshold", monitorH.ThresholdCheck)
+			monitor.GET("/jobs/:id", monitorH.JobStatus)
+			monitor.GET("/queue/status", monitorH.QueueStats)
+			monitor.GET("/alerts", monitorH.ListAlerts)
+			monitor.PATCH("/alerts/:id/resolve", monitorH.ResolveAlert)
 		}
 	}
 
