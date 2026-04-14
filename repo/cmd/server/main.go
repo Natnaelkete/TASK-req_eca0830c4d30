@@ -69,9 +69,15 @@ func setupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 
 	// Services
 	authSvc := services.NewAuthService(db, cfg.JWTSecret)
+	plotSvc := services.NewPlotService(db)
+	deviceSvc := services.NewDeviceService(db)
+	metricSvc := services.NewMetricService(db)
 
 	// Handlers
 	authH := handlers.NewAuthHandler(authSvc)
+	plotH := handlers.NewPlotHandler(plotSvc)
+	deviceH := handlers.NewDeviceHandler(deviceSvc)
+	metricH := handlers.NewMetricHandler(metricSvc)
 
 	// Auth routes (public)
 	v1 := r.Group("/v1")
@@ -80,6 +86,41 @@ func setupRouter(db *gorm.DB, cfg *config.Config) *gin.Engine {
 		auth.POST("/register", authH.Register)
 		auth.POST("/login", authH.Login)
 		auth.GET("/me", middleware.AuthMiddleware(authSvc), authH.Me)
+	}
+
+	// Protected routes
+	protected := v1.Group("")
+	protected.Use(middleware.AuthMiddleware(authSvc))
+	{
+		// Plots
+		plots := protected.Group("/plots")
+		{
+			plots.POST("", plotH.Create)
+			plots.GET("", plotH.List)
+			plots.GET("/:id", plotH.Get)
+			plots.PUT("/:id", plotH.Update)
+			plots.DELETE("/:id", plotH.Delete)
+		}
+
+		// Devices
+		devices := protected.Group("/devices")
+		{
+			devices.POST("", deviceH.Create)
+			devices.GET("", deviceH.List)
+			devices.GET("/:id", deviceH.Get)
+			devices.PUT("/:id", deviceH.Update)
+			devices.DELETE("/:id", deviceH.Delete)
+		}
+
+		// Metrics
+		metrics := protected.Group("/metrics")
+		{
+			metrics.POST("", metricH.Create)
+			metrics.POST("/batch", metricH.BatchCreate)
+			metrics.GET("", metricH.List)
+			metrics.GET("/:id", metricH.Get)
+			metrics.DELETE("/:id", metricH.Delete)
+		}
 	}
 
 	return r
