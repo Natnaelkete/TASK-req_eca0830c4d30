@@ -12,6 +12,8 @@ cov.out
 
 # Environment
 .env
+
+# Claude
 .claude/
 
 # MySQL data volume
