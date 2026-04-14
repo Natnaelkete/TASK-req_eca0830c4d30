@@ -32,7 +32,17 @@ func main() {
 
 	queueSvc := services.NewQueueService(100, 4)
 
-	router := setupRouter(db, cfg, queueSvc)
+	// Background context for goroutines
+	bgCtx, bgCancel := context.WithCancel(context.Background())
+
+	// Start background services
+	taskSvc := services.NewTaskService(db)
+	taskSvc.StartOverdueChecker(bgCtx)
+
+	capacitySvc := services.NewCapacityService(db)
+	capacitySvc.StartCapacityMonitor(bgCtx)
+
+	router := setupRouter(db, cfg, queueSvc, taskSvc, capacitySvc)
 
 	srv := &http.Server{
 		Addr:         ":" + cfg.ServerPort,
@@ -54,6 +64,7 @@ func main() {
 	<-quit
 	log.Println("shutting down server...")
 
+	bgCancel()
 	queueSvc.Shutdown()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -63,10 +74,13 @@ func main() {
 	log.Println("server exited")
 }
 
-func setupRouter(db *gorm.DB, cfg *config.Config, queueSvc *services.QueueService) *gin.Engine {
+func setupRouter(db *gorm.DB, cfg *config.Config, queueSvc *services.QueueService, taskSvc *services.TaskService, capacitySvc *services.CapacityService) *gin.Engine {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery())
+
+	// Global audit middleware
+	r.Use(middleware.AuditMiddleware(db))
 
 	r.GET("/health", healthHandler(db))
 
@@ -79,7 +93,7 @@ func setupRouter(db *gorm.DB, cfg *config.Config, queueSvc *services.QueueServic
 	monDataSvc := services.NewMonitoringDataService(db, queueSvc)
 	dashSvc := services.NewDashboardService(db)
 	analysisSvc := services.NewAnalysisService(db)
-	taskSvc := services.NewTaskService(db)
+	convSvc := services.NewConversationService(db)
 	chatSvc := services.NewChatService(db)
 	resultSvc := services.NewResultService(db)
 
@@ -92,9 +106,11 @@ func setupRouter(db *gorm.DB, cfg *config.Config, queueSvc *services.QueueServic
 	monDataH := handlers.NewMonitoringDataHandler(monDataSvc, queueSvc)
 	dashH := handlers.NewDashboardHandler(dashSvc)
 	analysisH := handlers.NewAnalysisHandler(analysisSvc)
+	convH := handlers.NewConversationHandler(convSvc)
 	taskH := handlers.NewTaskHandler(taskSvc)
 	chatH := handlers.NewChatHandler(chatSvc)
 	resultH := handlers.NewResultHandler(resultSvc)
+	capacityH := handlers.NewCapacityHandler(capacitySvc)
 
 	// Auth routes (public)
 	v1 := r.Group("/v1")
@@ -182,17 +198,41 @@ func setupRouter(db *gorm.DB, cfg *config.Config, queueSvc *services.QueueServic
 			analysis.POST("/retention", analysisH.Retention)
 		}
 
-		// Tasks
+		// Orders & Conversations (Phase 7)
+		orders := protected.Group("/orders")
+		{
+			orders.POST("", convH.CreateOrder)
+			orders.GET("", convH.ListOrders)
+			orders.GET("/:id", convH.GetOrder)
+			orders.POST("/:id/messages", convH.PostMessage)
+			orders.GET("/:id/messages", convH.ListMessages)
+			orders.PATCH("/:id/messages/:msg_id/read", convH.MarkRead)
+			orders.POST("/:id/transfer", convH.TransferTicket)
+			orders.POST("/:id/templates/:template_id", convH.SendTemplate)
+		}
+
+		// Templates
+		templates := protected.Group("/templates")
+		{
+			templates.POST("", convH.CreateTemplate)
+			templates.GET("", convH.ListTemplates)
+		}
+
+		// Tasks (Phase 9)
 		tasks := protected.Group("/tasks")
 		{
 			tasks.POST("", taskH.Create)
+			tasks.POST("/generate", taskH.Generate)
 			tasks.GET("", taskH.List)
 			tasks.GET("/:id", taskH.Get)
 			tasks.PUT("/:id", taskH.Update)
 			tasks.DELETE("/:id", taskH.Delete)
+			tasks.PATCH("/:id/submit", taskH.Submit)
+			tasks.PATCH("/:id/review", taskH.Review)
+			tasks.PATCH("/:id/complete", taskH.Complete)
 		}
 
-		// Chat
+		// Chat (legacy simple messaging)
 		chat := protected.Group("/chat")
 		{
 			chat.POST("", chatH.Send)
@@ -200,7 +240,7 @@ func setupRouter(db *gorm.DB, cfg *config.Config, queueSvc *services.QueueServic
 			chat.PATCH("/:id/read", chatH.MarkRead)
 		}
 
-		// Results
+		// Results (Phase 8)
 		results := protected.Group("/results")
 		{
 			results.POST("", resultH.Create)
@@ -208,6 +248,18 @@ func setupRouter(db *gorm.DB, cfg *config.Config, queueSvc *services.QueueServic
 			results.GET("/:id", resultH.Get)
 			results.PUT("/:id", resultH.Update)
 			results.DELETE("/:id", resultH.Delete)
+			results.PATCH("/:id/transition", resultH.Transition)
+			results.POST("/:id/notes", resultH.AppendNotes)
+			results.POST("/:id/invalidate", resultH.Invalidate)
+			results.POST("/field-rules", resultH.CreateFieldRule)
+			results.GET("/field-rules", resultH.ListFieldRules)
+		}
+
+		// System (Phase 10)
+		system := protected.Group("/system")
+		{
+			system.GET("/capacity", capacityH.CheckDisk)
+			system.GET("/notifications", capacityH.ListNotifications)
 		}
 	}
 

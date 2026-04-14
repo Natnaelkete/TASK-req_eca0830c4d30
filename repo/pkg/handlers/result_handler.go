@@ -23,14 +23,16 @@ func (h *ResultHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
-	userID := c.GetUint("user_id")
-	result, err := h.resultSvc.Create(c.Request.Context(), userID, in)
+	userID, _ := c.Get("user_id")
+	result, err := h.resultSvc.Create(c.Request.Context(), userID.(uint), in)
 	if err != nil {
+		if errors.Is(err, services.ErrFieldValidationFailed) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create result"})
 		return
 	}
-
 	c.JSON(http.StatusCreated, result)
 }
 
@@ -41,16 +43,13 @@ func (h *ResultHandler) List(c *gin.Context) {
 	taskID, _ := strconv.ParseUint(c.Query("task_id"), 10, 64)
 
 	result, err := h.resultSvc.List(c.Request.Context(), services.ResultListParams{
-		Page:     page,
-		PageSize: pageSize,
-		PlotID:   uint(plotID),
-		TaskID:   uint(taskID),
+		Page: page, PageSize: pageSize, PlotID: uint(plotID), TaskID: uint(taskID),
+		Type: c.Query("type"), Status: c.Query("status"),
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list results"})
 		return
 	}
-
 	c.JSON(http.StatusOK, result)
 }
 
@@ -60,7 +59,6 @@ func (h *ResultHandler) Get(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid result id"})
 		return
 	}
-
 	result, err := h.resultSvc.GetByID(c.Request.Context(), uint(id))
 	if err != nil {
 		if errors.Is(err, services.ErrResultNotFound) {
@@ -70,7 +68,6 @@ func (h *ResultHandler) Get(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get result"})
 		return
 	}
-
 	c.JSON(http.StatusOK, result)
 }
 
@@ -80,23 +77,25 @@ func (h *ResultHandler) Update(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid result id"})
 		return
 	}
-
+	userID, _ := c.Get("user_id")
 	var in services.UpdateResultInput
 	if err := c.ShouldBindJSON(&in); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
-	result, err := h.resultSvc.Update(c.Request.Context(), uint(id), in)
+	result, err := h.resultSvc.Update(c.Request.Context(), uint(id), userID.(uint), in)
 	if err != nil {
 		if errors.Is(err, services.ErrResultNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "result not found"})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update result"})
+		if errors.Is(err, services.ErrResultArchived) {
+			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
 	c.JSON(http.StatusOK, result)
 }
 
@@ -106,7 +105,6 @@ func (h *ResultHandler) Delete(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid result id"})
 		return
 	}
-
 	if err := h.resultSvc.Delete(c.Request.Context(), uint(id)); err != nil {
 		if errors.Is(err, services.ErrResultNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "result not found"})
@@ -115,6 +113,116 @@ func (h *ResultHandler) Delete(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete result"})
 		return
 	}
-
 	c.JSON(http.StatusOK, gin.H{"message": "result deleted"})
+}
+
+// Transition handles PATCH /v1/results/:id/transition — changes status via state machine.
+func (h *ResultHandler) Transition(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid result id"})
+		return
+	}
+	userID, _ := c.Get("user_id")
+	var in struct {
+		Status string `json:"status" binding:"required"`
+		Reason string `json:"reason"`
+	}
+	if err := c.ShouldBindJSON(&in); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	result, err := h.resultSvc.Transition(c.Request.Context(), uint(id), userID.(uint), in.Status, in.Reason)
+	if err != nil {
+		if errors.Is(err, services.ErrResultNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "result not found"})
+			return
+		}
+		if errors.Is(err, services.ErrInvalidTransition) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to transition"})
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// AppendNotes handles POST /v1/results/:id/notes — adds notes to archived results.
+func (h *ResultHandler) AppendNotes(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid result id"})
+		return
+	}
+	userID, _ := c.Get("user_id")
+	var in struct {
+		Notes string `json:"notes" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&in); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	result, err := h.resultSvc.AppendNotes(c.Request.Context(), uint(id), userID.(uint), in.Notes)
+	if err != nil {
+		if errors.Is(err, services.ErrResultNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "result not found"})
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// Invalidate handles POST /v1/results/:id/invalidate — invalidates an archived result.
+func (h *ResultHandler) Invalidate(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid result id"})
+		return
+	}
+	userID, _ := c.Get("user_id")
+	var in struct {
+		Reason string `json:"reason" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&in); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	result, err := h.resultSvc.Invalidate(c.Request.Context(), uint(id), userID.(uint), in.Reason)
+	if err != nil {
+		if errors.Is(err, services.ErrResultNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "result not found"})
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
+// CreateFieldRule handles POST /v1/results/field-rules.
+func (h *ResultHandler) CreateFieldRule(c *gin.Context) {
+	var in services.CreateFieldRuleInput
+	if err := c.ShouldBindJSON(&in); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	rule, err := h.resultSvc.CreateFieldRule(c.Request.Context(), in)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create field rule"})
+		return
+	}
+	c.JSON(http.StatusCreated, rule)
+}
+
+// ListFieldRules handles GET /v1/results/field-rules.
+func (h *ResultHandler) ListFieldRules(c *gin.Context) {
+	rules, err := h.resultSvc.ListFieldRules(c.Request.Context(), c.Query("result_type"))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to list field rules"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": rules})
 }

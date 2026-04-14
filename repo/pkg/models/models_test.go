@@ -93,16 +93,24 @@ func TestMetricStruct(t *testing.T) {
 
 func TestTaskStruct(t *testing.T) {
 	due := time.Now().Add(24 * time.Hour)
+	reviewerID := uint(2)
 	tk := Task{
 		ID:          1,
 		Title:       "Evaluate crop yield",
 		Description: "Measure output from Field A",
+		ObjectID:    10,
+		ObjectType:  "plot",
+		CycleType:   "monthly",
 		Status:      "pending",
 		AssignedTo:  1,
-		DueDate:     &due,
+		ReviewerID:  &reviewerID,
+		DueEnd:      &due,
 	}
 	assert.Equal(t, "Evaluate crop yield", tk.Title)
 	assert.Equal(t, "pending", tk.Status)
+	assert.Equal(t, uint(10), tk.ObjectID)
+	assert.Equal(t, "plot", tk.ObjectType)
+	assert.NotNil(t, tk.ReviewerID)
 }
 
 func TestAuditLogStruct(t *testing.T) {
@@ -164,15 +172,20 @@ func TestResultTableName(t *testing.T) {
 func TestResultStruct(t *testing.T) {
 	taskID := uint(1)
 	r := Result{
-		ID:        1,
-		PlotID:    1,
-		TaskID:    &taskID,
-		Title:     "Yield Analysis",
-		Summary:   "Positive results",
-		Data:      `{"yield":500}`,
-		CreatedBy: 1,
+		ID:          1,
+		Type:        "paper",
+		PlotID:      1,
+		TaskID:      &taskID,
+		Title:       "Yield Analysis",
+		Summary:     "Positive results",
+		Fields:      `{"abstract":"test"}`,
+		Status:      "draft",
+		SubmitterID: 1,
+		CreatedBy:   1,
 	}
+	assert.Equal(t, "paper", r.Type)
 	assert.Equal(t, "Yield Analysis", r.Title)
+	assert.Equal(t, "draft", r.Status)
 	assert.Equal(t, uint(1), r.PlotID)
 	assert.NotNil(t, r.TaskID)
 }
@@ -219,4 +232,73 @@ func TestDashboardConfigStruct(t *testing.T) {
 	assert.Equal(t, "My Dashboard", cfg.Name)
 	assert.Contains(t, cfg.Config, "temperature")
 	assert.Contains(t, cfg.Config, "line")
+}
+
+func TestOrderTableName(t *testing.T) {
+	assert.Equal(t, "orders", Order{}.TableName())
+}
+
+func TestOrderStruct(t *testing.T) {
+	o := Order{ID: 1, ResearcherID: 2, Title: "Research Order", Status: "open", AssignedTo: 2}
+	assert.Equal(t, "Research Order", o.Title)
+	assert.Equal(t, "open", o.Status)
+}
+
+func TestConversationTableName(t *testing.T) {
+	assert.Equal(t, "conversations", Conversation{}.TableName())
+}
+
+func TestConversationStruct(t *testing.T) {
+	transferTo := uint(5)
+	c := Conversation{ID: 1, OrderID: 1, UserID: 2, Message: "Hello", TransferredTo: &transferTo}
+	assert.Equal(t, "Hello", c.Message)
+	assert.NotNil(t, c.TransferredTo)
+}
+
+func TestTemplateMessageTableName(t *testing.T) {
+	assert.Equal(t, "template_messages", TemplateMessage{}.TableName())
+}
+
+func TestTemplateMessageStruct(t *testing.T) {
+	tm := TemplateMessage{ID: 1, Name: "Welcome", Content: "Welcome!"}
+	assert.Equal(t, "Welcome", tm.Name)
+}
+
+func TestSensitiveWordLogTableName(t *testing.T) {
+	assert.Equal(t, "sensitive_word_logs", SensitiveWordLog{}.TableName())
+}
+
+func TestSensitiveWordLogStruct(t *testing.T) {
+	sl := SensitiveWordLog{ID: 1, UserID: 2, OrderID: 3, Content: "illegal stuff", Word: "illegal"}
+	assert.Equal(t, "illegal", sl.Word)
+}
+
+func TestFieldRuleTableName(t *testing.T) {
+	assert.Equal(t, "field_rules", FieldRule{}.TableName())
+}
+
+func TestFieldRuleStruct(t *testing.T) {
+	fr := FieldRule{ID: 1, ResultType: "paper", FieldName: "abstract", Required: true, MaxLength: 5000}
+	assert.True(t, fr.Required)
+	assert.Equal(t, 5000, fr.MaxLength)
+}
+
+func TestResultStatusLogTableName(t *testing.T) {
+	assert.Equal(t, "result_status_logs", ResultStatusLog{}.TableName())
+}
+
+func TestResultStatusLogStruct(t *testing.T) {
+	rsl := ResultStatusLog{ID: 1, ResultID: 10, FromStatus: "draft", ToStatus: "submitted", ChangedBy: 2, Reason: "Ready"}
+	assert.Equal(t, "submitted", rsl.ToStatus)
+	assert.Equal(t, "Ready", rsl.Reason)
+}
+
+func TestSystemNotificationTableName(t *testing.T) {
+	assert.Equal(t, "system_notifications", SystemNotification{}.TableName())
+}
+
+func TestSystemNotificationStruct(t *testing.T) {
+	sn := SystemNotification{ID: 1, Type: "capacity", Message: "Disk usage at 85%", Level: "warning"}
+	assert.Equal(t, "capacity", sn.Type)
+	assert.Equal(t, "warning", sn.Level)
 }
