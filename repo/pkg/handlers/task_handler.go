@@ -150,10 +150,16 @@ func (h *TaskHandler) Submit(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task id"})
 		return
 	}
-	task, err := h.taskSvc.Submit(c.Request.Context(), uint(id))
+	userID, _ := c.Get("user_id")
+	role, _ := c.Get("role")
+	task, err := h.taskSvc.Submit(c.Request.Context(), uint(id), userID.(uint), role.(string))
 	if err != nil {
 		if errors.Is(err, services.ErrTaskNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
+			return
+		}
+		if errors.Is(err, services.ErrTaskForbidden) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "not authorized to submit this task"})
 			return
 		}
 		if errors.Is(err, services.ErrTaskInvalidStatus) {
@@ -174,10 +180,15 @@ func (h *TaskHandler) Review(c *gin.Context) {
 		return
 	}
 	userID, _ := c.Get("user_id")
-	task, err := h.taskSvc.Review(c.Request.Context(), uint(id), userID.(uint))
+	role, _ := c.Get("role")
+	task, err := h.taskSvc.Review(c.Request.Context(), uint(id), userID.(uint), role.(string))
 	if err != nil {
 		if errors.Is(err, services.ErrTaskNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
+			return
+		}
+		if errors.Is(err, services.ErrTaskForbidden) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "not authorized to review this task"})
 			return
 		}
 		if errors.Is(err, services.ErrTaskInvalidStatus) {
@@ -197,10 +208,16 @@ func (h *TaskHandler) Complete(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid task id"})
 		return
 	}
-	task, err := h.taskSvc.Complete(c.Request.Context(), uint(id))
+	userID, _ := c.Get("user_id")
+	role, _ := c.Get("role")
+	task, err := h.taskSvc.Complete(c.Request.Context(), uint(id), userID.(uint), role.(string))
 	if err != nil {
 		if errors.Is(err, services.ErrTaskNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "task not found"})
+			return
+		}
+		if errors.Is(err, services.ErrTaskForbidden) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "not authorized to complete this task"})
 			return
 		}
 		if errors.Is(err, services.ErrTaskInvalidStatus) {

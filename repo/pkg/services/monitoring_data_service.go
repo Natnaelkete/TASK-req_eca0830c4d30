@@ -139,6 +139,8 @@ type AggregationParams struct {
 	Tags       string `json:"tags"`       // JSON key-value to match
 	Function   string `json:"function"`   // count, min, max, avg, sum
 	GroupBy    string `json:"group_by"`   // metric_code, device_id, plot_id, or empty
+	UserID     uint   `json:"-"`          // authenticated user for scoping
+	Role       string `json:"-"`          // authenticated user role
 }
 
 type AggregationResult struct {
@@ -170,6 +172,17 @@ func (s *MonitoringDataService) Aggregate(ctx context.Context, p AggregationPara
 	}
 
 	q := s.db.WithContext(ctx).Model(&models.MonitoringData{})
+
+	// Object-level isolation: non-admin users only see data from their plots
+	if p.Role != "admin" && p.UserID > 0 {
+		var plotIDs []uint
+		s.db.WithContext(ctx).Model(&models.Plot{}).Where("user_id = ?", p.UserID).Pluck("id", &plotIDs)
+		if len(plotIDs) == 0 {
+			return []AggregationResult{}, nil
+		}
+		q = q.Where("plot_id IN ?", plotIDs)
+	}
+
 	q = applyMonitoringFilters(q, p.PlotID, p.DeviceID, p.MetricCode, p.StartTime, p.EndTime, p.Tags)
 
 	groupBy := strings.ToLower(p.GroupBy)
@@ -208,6 +221,8 @@ type CurveParams struct {
 	DeviceID   uint   `json:"device_id"`
 	MetricCode string `json:"metric_code" binding:"required"`
 	Minutes    int    `json:"minutes"` // last N minutes, default 60
+	UserID     uint   `json:"-"`       // authenticated user for scoping
+	Role       string `json:"-"`       // authenticated user role
 }
 
 type CurvePoint struct {
@@ -225,6 +240,16 @@ func (s *MonitoringDataService) RealtimeCurve(ctx context.Context, p CurveParams
 	q := s.db.WithContext(ctx).Model(&models.MonitoringData{}).
 		Select("event_time, value").
 		Where("event_time >= ?", since)
+
+	// Object-level isolation: non-admin users only see data from their plots
+	if p.Role != "admin" && p.UserID > 0 {
+		var plotIDs []uint
+		s.db.WithContext(ctx).Model(&models.Plot{}).Where("user_id = ?", p.UserID).Pluck("id", &plotIDs)
+		if len(plotIDs) == 0 {
+			return []CurvePoint{}, nil
+		}
+		q = q.Where("plot_id IN ?", plotIDs)
+	}
 
 	if p.DeviceID > 0 {
 		q = q.Where("device_id = ?", p.DeviceID)
@@ -255,6 +280,8 @@ type TrendParams struct {
 	EndTime    string `json:"end_time"   binding:"required"` // RFC3339
 	Interval   string `json:"interval"`                      // daily, weekly, monthly
 	Function   string `json:"function"`                      // avg, sum, min, max, count
+	UserID     uint   `json:"-"`                             // authenticated user for scoping
+	Role       string `json:"-"`                             // authenticated user role
 }
 
 type TrendPoint struct {
@@ -337,6 +364,16 @@ func (s *MonitoringDataService) queryTrend(ctx context.Context, p TrendParams, s
 	q := s.db.WithContext(ctx).Model(&models.MonitoringData{}).
 		Select(fmt.Sprintf("DATE_FORMAT(event_time, '%s') as period, %s as value, COUNT(*) as count", dateFormat, aggExpr)).
 		Where("event_time >= ? AND event_time <= ?", start, end)
+
+	// Object-level isolation: non-admin users only see data from their plots
+	if p.Role != "admin" && p.UserID > 0 {
+		var plotIDs []uint
+		s.db.WithContext(ctx).Model(&models.Plot{}).Where("user_id = ?", p.UserID).Pluck("id", &plotIDs)
+		if len(plotIDs) == 0 {
+			return []TrendPoint{}, nil
+		}
+		q = q.Where("plot_id IN ?", plotIDs)
+	}
 
 	if p.DeviceID > 0 {
 		q = q.Where("device_id = ?", p.DeviceID)
@@ -472,10 +509,23 @@ type ExportParams struct {
 	StartTime  string
 	EndTime    string
 	Tags       string
+	UserID     uint   // authenticated user for scoping
+	Role       string // authenticated user role
 }
 
 func (s *MonitoringDataService) ExportData(ctx context.Context, p ExportParams) ([]models.MonitoringData, error) {
 	q := s.db.WithContext(ctx).Model(&models.MonitoringData{})
+
+	// Object-level isolation: non-admin users only see data from their plots
+	if p.Role != "admin" && p.UserID > 0 {
+		var plotIDs []uint
+		s.db.WithContext(ctx).Model(&models.Plot{}).Where("user_id = ?", p.UserID).Pluck("id", &plotIDs)
+		if len(plotIDs) == 0 {
+			return []models.MonitoringData{}, nil
+		}
+		q = q.Where("plot_id IN ?", plotIDs)
+	}
+
 	q = applyMonitoringFilters(q, p.PlotID, p.DeviceID, p.MetricCode, p.StartTime, p.EndTime, p.Tags)
 	q = q.Order("event_time ASC").Limit(10000)
 

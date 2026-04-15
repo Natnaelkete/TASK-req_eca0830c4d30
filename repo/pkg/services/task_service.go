@@ -135,13 +135,18 @@ func (s *TaskService) GenerateTasks(ctx context.Context, in GenerateTasksInput) 
 }
 
 // Submit moves a task to submitted status and records submission time.
-func (s *TaskService) Submit(ctx context.Context, id uint) (*models.Task, error) {
+func (s *TaskService) Submit(ctx context.Context, id, userID uint, role string) (*models.Task, error) {
 	var task models.Task
 	if err := s.db.WithContext(ctx).First(&task, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrTaskNotFound
 		}
 		return nil, fmt.Errorf("find task: %w", err)
+	}
+
+	// Object-level check: only the assigned user or admin can submit
+	if role != "admin" && task.AssignedTo != userID {
+		return nil, ErrTaskForbidden
 	}
 
 	if task.Status != "pending" && task.Status != "in_progress" {
@@ -162,13 +167,18 @@ func (s *TaskService) Submit(ctx context.Context, id uint) (*models.Task, error)
 }
 
 // Review moves a submitted task to under_review status.
-func (s *TaskService) Review(ctx context.Context, id, reviewerID uint) (*models.Task, error) {
+func (s *TaskService) Review(ctx context.Context, id, reviewerID uint, role string) (*models.Task, error) {
 	var task models.Task
 	if err := s.db.WithContext(ctx).First(&task, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrTaskNotFound
 		}
 		return nil, fmt.Errorf("find task: %w", err)
+	}
+
+	// Object-level check: only the pre-assigned reviewer or admin can review
+	if role != "admin" && (task.ReviewerID == nil || *task.ReviewerID != reviewerID) {
+		return nil, ErrTaskForbidden
 	}
 
 	if task.Status != "submitted" {
@@ -188,13 +198,18 @@ func (s *TaskService) Review(ctx context.Context, id, reviewerID uint) (*models.
 }
 
 // Complete marks a task as completed (from under_review).
-func (s *TaskService) Complete(ctx context.Context, id uint) (*models.Task, error) {
+func (s *TaskService) Complete(ctx context.Context, id, userID uint, role string) (*models.Task, error) {
 	var task models.Task
 	if err := s.db.WithContext(ctx).First(&task, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrTaskNotFound
 		}
 		return nil, fmt.Errorf("find task: %w", err)
+	}
+
+	// Object-level check: only the reviewer or admin can complete
+	if role != "admin" && (task.ReviewerID == nil || *task.ReviewerID != userID) {
+		return nil, ErrTaskForbidden
 	}
 
 	if task.Status != "under_review" {

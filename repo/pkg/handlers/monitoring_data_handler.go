@@ -102,6 +102,11 @@ func (h *MonitoringDataHandler) Aggregate(c *gin.Context) {
 		return
 	}
 
+	userID, _ := c.Get("user_id")
+	role, _ := c.Get("role")
+	p.UserID = userID.(uint)
+	p.Role = role.(string)
+
 	results, err := h.monDataSvc.Aggregate(c.Request.Context(), p)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -118,6 +123,11 @@ func (h *MonitoringDataHandler) RealtimeCurve(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
+	userID, _ := c.Get("user_id")
+	role, _ := c.Get("role")
+	p.UserID = userID.(uint)
+	p.Role = role.(string)
 
 	points, err := h.monDataSvc.RealtimeCurve(c.Request.Context(), p)
 	if err != nil {
@@ -136,6 +146,11 @@ func (h *MonitoringDataHandler) Trends(c *gin.Context) {
 		return
 	}
 
+	userID, _ := c.Get("user_id")
+	role, _ := c.Get("role")
+	p.UserID = userID.(uint)
+	p.Role = role.(string)
+
 	result, err := h.monDataSvc.TrendStatistics(c.Request.Context(), p)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -149,6 +164,8 @@ func (h *MonitoringDataHandler) Trends(c *gin.Context) {
 func (h *MonitoringDataHandler) ExportJSON(c *gin.Context) {
 	plotID, _ := strconv.ParseUint(c.Query("plot_id"), 10, 64)
 	deviceID, _ := strconv.ParseUint(c.Query("device_id"), 10, 64)
+	userID, _ := c.Get("user_id")
+	role, _ := c.Get("role")
 
 	data, err := h.monDataSvc.ExportData(c.Request.Context(), services.ExportParams{
 		PlotID:     uint(plotID),
@@ -157,6 +174,8 @@ func (h *MonitoringDataHandler) ExportJSON(c *gin.Context) {
 		StartTime:  c.Query("start_time"),
 		EndTime:    c.Query("end_time"),
 		Tags:       c.Query("tags"),
+		UserID:     userID.(uint),
+		Role:       role.(string),
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to export data"})
@@ -172,6 +191,8 @@ func (h *MonitoringDataHandler) ExportJSON(c *gin.Context) {
 func (h *MonitoringDataHandler) ExportCSV(c *gin.Context) {
 	plotID, _ := strconv.ParseUint(c.Query("plot_id"), 10, 64)
 	deviceID, _ := strconv.ParseUint(c.Query("device_id"), 10, 64)
+	userID, _ := c.Get("user_id")
+	role, _ := c.Get("role")
 
 	data, err := h.monDataSvc.ExportData(c.Request.Context(), services.ExportParams{
 		PlotID:     uint(plotID),
@@ -180,6 +201,8 @@ func (h *MonitoringDataHandler) ExportCSV(c *gin.Context) {
 		StartTime:  c.Query("start_time"),
 		EndTime:    c.Query("end_time"),
 		Tags:       c.Query("tags"),
+		UserID:     userID.(uint),
+		Role:       role.(string),
 	})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to export data"})

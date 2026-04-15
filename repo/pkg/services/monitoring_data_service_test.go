@@ -55,15 +55,30 @@ func TestAggregationParams_Fields(t *testing.T) {
 		EndTime:    "2026-01-31T23:59:59Z",
 		Function:   "avg",
 		GroupBy:    "device_id",
+		UserID:     10,
+		Role:       "researcher",
 	}
 	assert.Equal(t, "avg", p.Function)
 	assert.Equal(t, "device_id", p.GroupBy)
+	assert.Equal(t, uint(10), p.UserID)
+	assert.Equal(t, "researcher", p.Role)
 }
 
 func TestCurveParams_Defaults(t *testing.T) {
 	p := CurveParams{}
 	assert.Equal(t, 0, p.Minutes) // Default handled in service
 	assert.Equal(t, "", p.MetricCode)
+}
+
+func TestCurveParams_IsolationFields(t *testing.T) {
+	p := CurveParams{
+		PlotID:     1,
+		MetricCode: "temperature",
+		UserID:     42,
+		Role:       "researcher",
+	}
+	assert.Equal(t, uint(42), p.UserID)
+	assert.Equal(t, "researcher", p.Role)
 }
 
 func TestTrendParams_Fields(t *testing.T) {
@@ -73,9 +88,13 @@ func TestTrendParams_Fields(t *testing.T) {
 		EndTime:    "2026-12-31T23:59:59Z",
 		Interval:   "monthly",
 		Function:   "avg",
+		UserID:     10,
+		Role:       "researcher",
 	}
 	assert.Equal(t, "monthly", p.Interval)
 	assert.Equal(t, "avg", p.Function)
+	assert.Equal(t, uint(10), p.UserID)
+	assert.Equal(t, "researcher", p.Role)
 }
 
 func TestMonitoringDataListParams_Defaults(t *testing.T) {
@@ -91,9 +110,13 @@ func TestExportParams_Fields(t *testing.T) {
 		MetricCode: "humidity",
 		StartTime:  "2026-01-01T00:00:00Z",
 		EndTime:    "2026-01-31T23:59:59Z",
+		UserID:     42,
+		Role:       "researcher",
 	}
 	assert.Equal(t, uint(1), p.PlotID)
 	assert.Equal(t, "humidity", p.MetricCode)
+	assert.Equal(t, uint(42), p.UserID)
+	assert.Equal(t, "researcher", p.Role)
 }
 
 func TestErrMonitoringDataNotFound(t *testing.T) {

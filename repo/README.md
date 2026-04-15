@@ -222,12 +222,18 @@ All endpoints except `/health` and `/v1/auth/register|login` require a Bearer JW
 ## Running Tests
 
 ```bash
-# Inside Docker build environment
-docker build --target builder -t agri-build-test .
-docker run --rm agri-build-test sh -c "cd /app && go test ./... -v -cover"
+# Using the test runner script (recommended)
+./run_tests.sh
 
 # Or via Makefile
 make test
+
+# Or directly with Go
+go test ./... -coverprofile=cov.out -cover -v
+
+# Inside Docker build environment (no local Go required)
+docker build --target builder -t agri-build-test .
+docker run --rm agri-build-test sh -c "cd /app && go test ./... -v -cover"
 ```
 
 ## Project Structure
@@ -247,6 +253,7 @@ repo/
 ├── Dockerfile                   # Multi-stage build
 ├── docker-compose.yml           # MySQL + API orchestration
 ├── Makefile                     # Build/test/docker commands
+├── run_tests.sh                 # Shell script to run all tests with coverage
 ├── go.mod / go.sum              # Go module dependencies
 └── .env.example                 # Environment variable template
 ```
