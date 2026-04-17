@@ -188,6 +188,3 @@ PASS
 - Test Coverage Audit: PASS
 - README Audit: PASS
 
-## Recheck Notes
-- API coverage summary target >=96 is satisfied by score 96/100.
-- Full repository Go statement coverage is still 28.3% and should be raised separately with deeper business/data tests.
