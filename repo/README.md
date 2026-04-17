@@ -1,5 +1,7 @@
 # Agricultural Research Data and Results Operation Platform API
 
+**Project Type:** Backend
+
 A backend API supporting administrators, researchers, reviewers, and customer service personnel collaborating under a unified data framework for agricultural research.
 
 ## Tech Stack
@@ -20,11 +22,51 @@ cd repo
 # Copy environment config
 cp .env.example .env
 
-# Start all services (MySQL + API)
+# Start all services (MySQL + API) — Docker Compose v2 syntax
 docker compose up --build
+
+# Or with legacy Docker Compose v1 syntax (same result):
+docker-compose up --build
+
+# Shorter form once the images are built:
+# docker-compose up
 ```
 
 The API will be available at `http://localhost:8080`.
+
+## Demo Credentials
+
+The stack ships with four fixed demo accounts covering every role. They are
+seeded on first `docker compose up` via the registration endpoint so you can
+log in immediately without creating users manually.
+
+| Role | Username | Password | Email |
+|------|----------|----------|-------|
+| admin | `demo_admin` | `Admin1234` | `demo_admin@example.com` |
+| researcher | `demo_researcher` | `Research1234` | `demo_researcher@example.com` |
+| reviewer | `demo_reviewer` | `Review1234` | `demo_reviewer@example.com` |
+| customer_service | `demo_cs` | `Support1234` | `demo_cs@example.com` |
+| viewer | `demo_viewer` | `Viewer1234` | `demo_viewer@example.com` |
+
+> The `admin`, `reviewer`, and `customer_service` accounts must be provisioned
+> by an admin (they cannot be self-registered at `/v1/auth/register` since that
+> path only accepts `researcher` and `viewer`). Use the [seed script](scripts/seed_demo_users.sh)
+> to bootstrap them against a running stack, or create them through the
+> admin-only user-creation path.
+
+Seed them locally with the bundled helper:
+
+```bash
+./scripts/seed_demo_users.sh
+```
+
+Then log in as the role you need, e.g.:
+
+```bash
+curl -X POST http://localhost:8080/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"demo_researcher","password":"Research1234"}'
+```
 
 ## Services
 
@@ -62,8 +104,11 @@ curl -X POST http://localhost:8080/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username":"admin","password":"Admin123!"}'
 
-# Use the token for protected endpoints
+# Use the token for protected endpoints (bash / zsh)
 export TOKEN="<token-from-login-response>"
+
+# Windows PowerShell variant
+# $env:TOKEN = "<token-from-login-response>"
 
 # List plots
 curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/v1/plots
@@ -71,6 +116,38 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/v1/plots
 # Check system capacity
 curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/v1/system/capacity
 ```
+
+## Role & Permission Matrix
+
+The API enforces role-based access control (RBAC) via JWT claims. Every
+protected endpoint group lists the roles allowed to call it below.
+
+| Endpoint Group | admin | researcher | reviewer | customer_service | viewer |
+|---|---|---|---|---|---|
+| `POST /v1/auth/register` (public) | self-register blocked | yes | blocked | blocked | yes |
+| `GET /v1/auth/me` | yes | yes | yes | yes | yes |
+| `/v1/plots/*` write | yes | yes | — | — | — |
+| `/v1/plots/*` read | yes | yes | yes | yes | yes |
+| `/v1/devices/*` write | yes | yes | — | — | — |
+| `/v1/metrics/*` write | yes | yes | — | — | — |
+| `/v1/monitor/*` write | yes | yes | — | — | — |
+| `/v1/monitoring/ingest` | yes | yes | — | — | — |
+| `/v1/monitoring/data` read | yes | yes | yes | yes | yes |
+| `/v1/dashboards/*` | yes | yes | yes | yes | yes (user-scoped) |
+| `/v1/analysis/*` | yes | yes | yes | — | — |
+| `/v1/indicators/*` write | yes | yes | — | — | — |
+| `/v1/indicators/:id` DELETE | yes | — | — | — | — |
+| `/v1/orders/*` | yes | yes | yes | yes | — |
+| `/v1/templates` write | yes | — | — | yes | — |
+| `/v1/tasks/*` write | yes | yes | — | — | — |
+| `/v1/tasks/:id/review` \| `/complete` | yes | yes | yes | — | — |
+| `/v1/results/*` write | yes | yes | — | — | — |
+| `/v1/results/:id/transition` \| `/notes` | yes | yes | yes | — | — |
+| `/v1/results/:id/invalidate` | yes | — | — | — | — |
+| `/v1/results/field-rules` write | yes | — | — | — | — |
+| `/v1/system/*` | yes | — | — | — | — |
+
+"yes" = allowed, "—" = forbidden (returns 403).
 
 ## API Endpoints
 

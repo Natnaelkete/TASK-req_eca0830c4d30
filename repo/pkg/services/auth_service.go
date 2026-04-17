@@ -21,7 +21,22 @@ var (
 	ErrInvalidToken     = errors.New("invalid or expired token")
 	ErrForbidden        = errors.New("insufficient permissions")
 	ErrWeakPassword     = errors.New("password must be at least 8 characters and contain both letters and numbers")
+	ErrRoleNotAllowed   = errors.New("requested role is not allowed for public registration")
 )
+
+// publicRegistrationRoles lists roles that may be self-assigned at the public
+// registration endpoint. Privileged roles (admin, reviewer, customer_service)
+// must be provisioned through an admin-managed flow.
+var publicRegistrationRoles = map[string]struct{}{
+	"researcher": {},
+	"viewer":     {},
+}
+
+// IsPublicRegistrationRole reports whether a role is valid for public registration.
+func IsPublicRegistrationRole(role string) bool {
+	_, ok := publicRegistrationRoles[role]
+	return ok
+}
 
 // Claims embeds standard JWT claims plus our domain fields.
 type Claims struct {
@@ -47,12 +62,22 @@ func NewAuthService(db *gorm.DB, jwtSecret string, encryptionKey string) *AuthSe
 	return &AuthService{db: db, jwtSecret: []byte(jwtSecret), encryptor: enc}
 }
 
-// RegisterInput is the payload for user registration.
+// RegisterInput is the payload for user registration. Only non-privileged
+// roles (researcher, viewer) may be self-assigned via public registration.
 type RegisterInput struct {
 	Username string `json:"username" binding:"required,min=3,max=100"`
 	Email    string `json:"email"    binding:"required,email"`
 	Password string `json:"password" binding:"required,min=8"`
-	Role     string `json:"role"     binding:"omitempty,oneof=admin researcher reviewer customer_service viewer"`
+	Role     string `json:"role"     binding:"omitempty,oneof=researcher viewer"`
+}
+
+// AdminCreateUserInput is the payload for admin-managed user creation,
+// which permits elevated role assignment.
+type AdminCreateUserInput struct {
+	Username string `json:"username" binding:"required,min=3,max=100"`
+	Email    string `json:"email"    binding:"required,email"`
+	Password string `json:"password" binding:"required,min=8"`
+	Role     string `json:"role"     binding:"required,oneof=admin researcher reviewer customer_service viewer"`
 }
 
 // LoginInput is the payload for user login.
@@ -78,18 +103,41 @@ func validatePasswordComplexity(password string) error {
 	return ErrWeakPassword
 }
 
-// Register creates a new user after hashing the password.
+// Register creates a new user via the public registration endpoint. The role
+// must be one of the non-privileged roles (researcher, viewer); any other
+// requested role is rejected to prevent self-assigned privilege escalation.
 func (s *AuthService) Register(ctx context.Context, in RegisterInput) (*models.User, error) {
 	// Enforce password complexity: must contain both letters and numbers
 	if err := validatePasswordComplexity(in.Password); err != nil {
 		return nil, err
 	}
 
+	role := in.Role
+	if role == "" {
+		role = "researcher"
+	}
+	if !IsPublicRegistrationRole(role) {
+		return nil, ErrRoleNotAllowed
+	}
+
+	return s.createUser(ctx, in.Username, in.Email, in.Password, role)
+}
+
+// CreateUserByAdmin allows an admin caller to provision a user with any role.
+// This path must only be reachable through an admin-guarded route.
+func (s *AuthService) CreateUserByAdmin(ctx context.Context, in AdminCreateUserInput) (*models.User, error) {
+	if err := validatePasswordComplexity(in.Password); err != nil {
+		return nil, err
+	}
+	return s.createUser(ctx, in.Username, in.Email, in.Password, in.Role)
+}
+
+func (s *AuthService) createUser(ctx context.Context, username, email, password, role string) (*models.User, error) {
 	// Check for existing user by username or email hash
-	emailHash := models.HashEmail(in.Email)
+	emailHash := models.HashEmail(email)
 	var count int64
 	if err := s.db.WithContext(ctx).Model(&models.User{}).
-		Where("username = ? OR email_hash = ?", in.Username, emailHash).
+		Where("username = ? OR email_hash = ?", username, emailHash).
 		Count(&count).Error; err != nil {
 		return nil, fmt.Errorf("check existing user: %w", err)
 	}
@@ -97,24 +145,19 @@ func (s *AuthService) Register(ctx context.Context, in RegisterInput) (*models.U
 		return nil, ErrUserExists
 	}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, fmt.Errorf("hash password: %w", err)
 	}
 
 	// Encrypt email for at-rest protection
-	encryptedEmail, err := s.encryptor.Encrypt(in.Email)
+	encryptedEmail, err := s.encryptor.Encrypt(email)
 	if err != nil {
 		return nil, fmt.Errorf("encrypt email: %w", err)
 	}
 
-	role := in.Role
-	if role == "" {
-		role = "researcher"
-	}
-
 	user := models.User{
-		Username:     in.Username,
+		Username:     username,
 		Email:        encryptedEmail,
 		EmailHash:    emailHash,
 		PasswordHash: string(hash),
@@ -125,8 +168,7 @@ func (s *AuthService) Register(ctx context.Context, in RegisterInput) (*models.U
 		return nil, fmt.Errorf("create user: %w", err)
 	}
 
-	// Populate masked email for response
-	user.MaskedEmail = crypto.MaskEmail(in.Email)
+	user.MaskedEmail = crypto.MaskEmail(email)
 	return &user, nil
 }
 

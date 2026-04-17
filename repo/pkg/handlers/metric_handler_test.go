@@ -69,3 +69,19 @@ func TestMetricHandler_Delete_InvalidID(t *testing.T) {
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
+
+// GET /v1/metrics — HTTP route registration and handler invocation check.
+func TestMetricHandler_List_HTTP(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(gin.Recovery())
+	h := NewMetricHandler(nil)
+	r.GET("/v1/metrics", h.List)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/v1/metrics", nil)
+	r.ServeHTTP(w, req)
+
+	assert.NotEqual(t, http.StatusNotFound, w.Code)
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}

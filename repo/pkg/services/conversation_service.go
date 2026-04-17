@@ -214,11 +214,17 @@ func (s *ConversationService) ListMessages(ctx context.Context, orderID, userID 
 	return msgs, total, nil
 }
 
-// MarkRead marks a conversation message as read by the given user.
-func (s *ConversationService) MarkRead(ctx context.Context, msgID, userID uint) error {
+// MarkRead marks a conversation message as read by the given user. The
+// caller must have access to the owning order; the update predicate is
+// scoped by order_id to prevent cross-order IDOR abuse.
+func (s *ConversationService) MarkRead(ctx context.Context, orderID, msgID, userID uint, role string) error {
+	if _, err := s.checkOrderAccess(ctx, orderID, userID, role); err != nil {
+		return err
+	}
+
 	now := time.Now()
 	res := s.db.WithContext(ctx).Model(&models.Conversation{}).
-		Where("id = ? AND user_id != ?", msgID, userID). // can only mark others' messages as read
+		Where("id = ? AND order_id = ? AND user_id != ?", msgID, orderID, userID). // order-scoped; can only mark others' messages
 		Where("read_at IS NULL").
 		Update("read_at", now)
 	if res.Error != nil {

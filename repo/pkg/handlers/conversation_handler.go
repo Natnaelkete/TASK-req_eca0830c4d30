@@ -145,13 +145,27 @@ func (h *ConversationHandler) ListMessages(c *gin.Context) {
 
 func (h *ConversationHandler) MarkRead(c *gin.Context) {
 	userID, _ := c.Get("user_id")
+	role, _ := c.Get("role")
+	orderID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid order id"})
+		return
+	}
 	msgID, err := strconv.ParseUint(c.Param("msg_id"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid message id"})
 		return
 	}
 
-	if err := h.convSvc.MarkRead(c.Request.Context(), uint(msgID), userID.(uint)); err != nil {
+	if err := h.convSvc.MarkRead(c.Request.Context(), uint(orderID), uint(msgID), userID.(uint), role.(string)); err != nil {
+		if errors.Is(err, services.ErrOrderNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "order not found"})
+			return
+		}
+		if errors.Is(err, services.ErrOrderForbidden) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "not authorized to access this order"})
+			return
+		}
 		if errors.Is(err, services.ErrConversationNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "message not found"})
 			return

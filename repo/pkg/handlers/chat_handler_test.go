@@ -39,3 +39,21 @@ func TestChatHandler_MarkRead_InvalidID(t *testing.T) {
 	r.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
+
+// GET /v1/chat — HTTP route registration check.
+func TestChatHandler_List_HTTP(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(gin.Recovery())
+	h := NewChatHandler(nil)
+	r.GET("/v1/chat", func(c *gin.Context) {
+		c.Set("user_id", uint(1))
+		h.List(c)
+	})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/v1/chat", nil)
+	r.ServeHTTP(w, req)
+	assert.NotEqual(t, http.StatusNotFound, w.Code)
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}

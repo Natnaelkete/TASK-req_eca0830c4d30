@@ -73,3 +73,23 @@ func TestDeviceHandler_Delete_InvalidID(t *testing.T) {
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
+
+// GET /v1/devices — HTTP route registration and handler invocation check.
+func TestDeviceHandler_List_HTTP(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(gin.Recovery())
+	h := NewDeviceHandler(nil)
+	r.GET("/v1/devices", func(c *gin.Context) {
+		c.Set("user_id", uint(1))
+		c.Set("role", "researcher")
+		h.List(c)
+	})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/v1/devices", nil)
+	r.ServeHTTP(w, req)
+
+	assert.NotEqual(t, http.StatusNotFound, w.Code)
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}

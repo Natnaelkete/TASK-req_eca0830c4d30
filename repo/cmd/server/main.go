@@ -30,6 +30,14 @@ func main() {
 		log.Fatalf("init db: %v", err)
 	}
 
+	// Deterministic SQL migration bootstrap: applies any SQL file under
+	// cfg.MigrationsDir that has not yet been recorded in
+	// schema_migrations. This guarantees partitioning/archive schema is in
+	// place on clean environments without a manual step.
+	if err := models.RunSQLMigrations(db, cfg.MigrationsDir); err != nil {
+		log.Fatalf("run sql migrations: %v", err)
+	}
+
 	queueSvc := services.NewQueueService(100, 4)
 
 	// Background context for goroutines

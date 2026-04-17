@@ -91,11 +91,30 @@ func TestConversationHandler_MarkRead_InvalidMsgID(t *testing.T) {
 	r := gin.New()
 	r.PATCH("/v1/orders/:id/messages/:msg_id/read", func(c *gin.Context) {
 		c.Set("user_id", uint(1))
+		c.Set("role", "researcher")
 		h.MarkRead(c)
 	})
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("PATCH", "/v1/orders/1/messages/abc/read", nil)
+	r.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestConversationHandler_MarkRead_InvalidOrderID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := services.NewConversationService(nil)
+	h := NewConversationHandler(svc)
+	r := gin.New()
+	r.PATCH("/v1/orders/:id/messages/:msg_id/read", func(c *gin.Context) {
+		c.Set("user_id", uint(1))
+		c.Set("role", "researcher")
+		h.MarkRead(c)
+	})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("PATCH", "/v1/orders/abc/messages/1/read", nil)
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
@@ -132,6 +151,65 @@ func TestConversationHandler_CreateTemplate_BadJSON(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+// GET /v1/orders — HTTP route registration check.
+func TestConversationHandler_ListOrders_HTTP(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := services.NewConversationService(nil)
+	h := NewConversationHandler(svc)
+	r := gin.New()
+	r.Use(gin.Recovery())
+	r.GET("/v1/orders", func(c *gin.Context) {
+		c.Set("user_id", uint(1))
+		c.Set("role", "researcher")
+		h.ListOrders(c)
+	})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/v1/orders", nil)
+	r.ServeHTTP(w, req)
+
+	assert.NotEqual(t, http.StatusNotFound, w.Code)
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+// GET /v1/orders/:id/messages — HTTP route registration check.
+func TestConversationHandler_ListMessages_HTTP(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := services.NewConversationService(nil)
+	h := NewConversationHandler(svc)
+	r := gin.New()
+	r.Use(gin.Recovery())
+	r.GET("/v1/orders/:id/messages", func(c *gin.Context) {
+		c.Set("user_id", uint(1))
+		c.Set("role", "researcher")
+		h.ListMessages(c)
+	})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/v1/orders/1/messages", nil)
+	r.ServeHTTP(w, req)
+
+	assert.NotEqual(t, http.StatusNotFound, w.Code)
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+// GET /v1/templates — HTTP route registration check.
+func TestConversationHandler_ListTemplates_HTTP(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := services.NewConversationService(nil)
+	h := NewConversationHandler(svc)
+	r := gin.New()
+	r.Use(gin.Recovery())
+	r.GET("/v1/templates", h.ListTemplates)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/v1/templates", nil)
+	r.ServeHTTP(w, req)
+
+	assert.NotEqual(t, http.StatusNotFound, w.Code)
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
 }
 
 func TestConversationHandler_SendTemplate_InvalidIDs(t *testing.T) {

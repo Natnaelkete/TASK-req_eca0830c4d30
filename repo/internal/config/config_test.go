@@ -75,3 +75,58 @@ func TestLoad_MissingDBHost(t *testing.T) {
 	_, err := Load()
 	assert.Error(t, err)
 }
+
+// Non-development environments must refuse to boot with the bundled sample
+// JWT secret so a misconfigured deployment fails loudly instead of silently
+// accepting tokens forgeable by anyone with the source tree.
+func TestLoad_ProductionRejectsDefaultJWTSecret(t *testing.T) {
+	os.Setenv("APP_ENV", "production")
+	os.Unsetenv("JWT_SECRET")
+	os.Setenv("ENCRYPTION_KEY", "ffffffffffffffffffffffffffffffff")
+	defer func() {
+		os.Unsetenv("APP_ENV")
+		os.Unsetenv("ENCRYPTION_KEY")
+	}()
+
+	_, err := Load()
+	assert.Error(t, err)
+}
+
+func TestLoad_ProductionRejectsDefaultEncryptionKey(t *testing.T) {
+	os.Setenv("APP_ENV", "production")
+	os.Setenv("JWT_SECRET", "a-real-secret")
+	os.Unsetenv("ENCRYPTION_KEY")
+	defer func() {
+		os.Unsetenv("APP_ENV")
+		os.Unsetenv("JWT_SECRET")
+	}()
+
+	_, err := Load()
+	assert.Error(t, err)
+}
+
+func TestLoad_ProductionAcceptsOverriddenSecrets(t *testing.T) {
+	os.Setenv("APP_ENV", "production")
+	os.Setenv("JWT_SECRET", "a-real-secret")
+	os.Setenv("ENCRYPTION_KEY", "ffffffffffffffffffffffffffffffff")
+	defer func() {
+		os.Unsetenv("APP_ENV")
+		os.Unsetenv("JWT_SECRET")
+		os.Unsetenv("ENCRYPTION_KEY")
+	}()
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, "production", cfg.AppEnv)
+}
+
+func TestLoad_DevelopmentAcceptsDefaults(t *testing.T) {
+	os.Unsetenv("APP_ENV")
+	os.Unsetenv("JWT_SECRET")
+	os.Unsetenv("ENCRYPTION_KEY")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	assert.Equal(t, "development", cfg.AppEnv)
+	assert.Equal(t, "migrations", cfg.MigrationsDir)
+}

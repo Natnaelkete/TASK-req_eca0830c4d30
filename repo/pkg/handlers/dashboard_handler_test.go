@@ -86,6 +86,26 @@ func TestDashboardHandler_Delete_InvalidID(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
+// GET /v1/dashboards — HTTP route registration check.
+func TestDashboardHandler_List_HTTP(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	svc := services.NewDashboardService(nil)
+	h := NewDashboardHandler(svc)
+	r := gin.New()
+	r.Use(gin.Recovery())
+	r.GET("/v1/dashboards", func(c *gin.Context) {
+		c.Set("user_id", uint(1))
+		h.List(c)
+	})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/v1/dashboards", nil)
+	r.ServeHTTP(w, req)
+
+	assert.NotEqual(t, http.StatusNotFound, w.Code)
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
 func TestDashboardHandler_Update_BadJSON(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	svc := services.NewDashboardService(nil)

@@ -1,67 +1,58 @@
-# Delivery Architecture Audit Re-check
+# audit_report-2-fix_check
 
 ## Scope
 
-- Re-checked previously raised material issues using **static review** of current codebase.
-- Attempted to run tests as requested.
+- Static re-check only for issues listed in `.tmp/audit_report-2.md`.
+- Did not run project, tests, Docker, or external services.
 
-## Test Run Attempt
+## Overall Result
 
-- Command attempted: `go test ./... -cover -v`
-- Result: **Failed to execute** (`go: command not found`)
-- Evidence: shell output from command execution in `repo/`
-- Conclusion: **Cannot Confirm Statistically** for runtime test pass/fail until Go toolchain is available.
+- Conclusion: **Pass**
+- All remaining material issues from `audit_report-2.md` are now resolved based on static code evidence.
 
-## Previous-Issue Re-check
+## Fix Check Matrix
 
-1) **Password policy (8+ and letters+numbers)**
-- **Status:** Fixed
-- **Evidence:** `repo/pkg/services/auth_service.go:54`, `repo/pkg/services/auth_service.go:65`
+### 1) Monitoring analytics/export endpoints not user-scoped
 
-2) **Role set completeness (admin/researcher/reviewer/customer_service)**
-- **Status:** Fixed
-- **Evidence:** `repo/pkg/services/auth_service.go:55`, `repo/cmd/server/main.go:124`
+- Previous status: **High / Fail**
+- Current status: **Resolved**
+- Why:
+  - Handlers now extract `user_id` and `role` and pass them to aggregate/curve/trends/export service calls.
+  - Service methods now include user-scoping fields and enforce non-admin plot ownership filters.
+- Evidence:
+  - Handler context propagation:
+    - `repo/pkg/handlers/monitoring_data_handler.go:105`
+    - `repo/pkg/handlers/monitoring_data_handler.go:127`
+    - `repo/pkg/handlers/monitoring_data_handler.go:149`
+    - `repo/pkg/handlers/monitoring_data_handler.go:167`
+    - `repo/pkg/handlers/monitoring_data_handler.go:194`
+  - Service ownership filters:
+    - `repo/pkg/services/monitoring_data_service.go:177`
+    - `repo/pkg/services/monitoring_data_service.go:245`
+    - `repo/pkg/services/monitoring_data_service.go:369`
+    - `repo/pkg/services/monitoring_data_service.go:520`
 
-3) **Sensitive contact field protection (email encryption/desensitization)**
-- **Status:** Fixed
-- **Evidence:** `repo/pkg/models/user.go:13`, `repo/pkg/services/auth_service.go:106`, `repo/pkg/handlers/auth_handler.go:42`
+### 2) Task submit/review/complete missing object-level authorization
 
-4) **Indicator version management with modifier/timestamp/diff**
-- **Status:** Fixed
-- **Evidence:** `repo/pkg/models/indicator_version.go:23`, `repo/pkg/services/indicator_service.go:163`, `repo/cmd/server/main.go:214`
+- Previous status: **High / Fail**
+- Current status: **Resolved**
+- Why:
+  - Handler now passes `user_id` and `role` to submit/review/complete service methods.
+  - Service enforces object-level actor checks:
+    - submit: only assigned user or admin
+    - review: only pre-assigned reviewer or admin
+    - complete: only reviewer or admin
+- Evidence:
+  - Handler propagation:
+    - `repo/pkg/handlers/task_handler.go:153`
+    - `repo/pkg/handlers/task_handler.go:182`
+    - `repo/pkg/handlers/task_handler.go:211`
+  - Service checks:
+    - `repo/pkg/services/task_service.go:147`
+    - `repo/pkg/services/task_service.go:179`
+    - `repo/pkg/services/task_service.go:210`
 
-5) **Route-level role protection for privileged endpoints**
-- **Status:** Largely fixed
-- **Evidence:** `repo/cmd/server/main.go:121`, `repo/cmd/server/main.go:283`
+## Final Note
 
-6) **Monitoring monthly partitioning as enforceable schema**
-- **Status:** **Not fixed (Blocker remains)**
-- **Evidence:** `repo/migrations/002_indicator_versions_and_partitioning.sql:50`, `repo/migrations/002_indicator_versions_and_partitioning.sql:54`, `repo/pkg/services/retention_service.go:39`
-- **Reason:** partition DDL is documented as manual/commented; no deterministic migration that guarantees partitioned table structure.
-
-7) **Task object-level read isolation (`list/get`)**
-- **Status:** **Not fixed (High remains)**
-- **Evidence:** `repo/pkg/handlers/task_handler.go:49`, `repo/pkg/services/task_service.go:269`, `repo/pkg/services/task_service.go:316`
-
-8) **Result object-level read isolation (`list/get`)**
-- **Status:** **Not fixed (High remains)**
-- **Evidence:** `repo/pkg/handlers/result_handler.go:39`, `repo/pkg/services/result_service.go:279`, `repo/pkg/services/result_service.go:322`
-
-9) **Device data isolation (`list/get`)**
-- **Status:** **Not fixed (High remains)**
-- **Evidence:** `repo/pkg/handlers/device_handler.go:40`, `repo/pkg/services/device_service.go:78`, `repo/pkg/services/device_service.go:119`
-
-10) **Monitoring data read isolation (`list/get`)**
-- **Status:** **Not fixed (High remains)**
-- **Evidence:** `repo/pkg/handlers/monitoring_data_handler.go:42`, `repo/pkg/services/monitoring_data_service.go:393`, `repo/pkg/services/monitoring_data_service.go:429`
-
-11) **Overdue auto-delay rule coverage across active states**
-- **Status:** Not fixed
-- **Evidence:** `repo/pkg/services/task_service.go:218`
-- **Note:** current query marks only `pending`/`in_progress` as delayed.
-
-## Current Re-check Verdict
-
-- **Overall:** **Partial Pass**
-- Strong progress on previously raised auth/account/indicator issues.
-- Still blocked by partitioning determinism and multiple unresolved object-level data-isolation defects.
+- This report validates only the issues explicitly marked as remaining in `.tmp/audit_report-2.md`.
+- Runtime behavior remains **Manual Verification Required** (static-only boundary).

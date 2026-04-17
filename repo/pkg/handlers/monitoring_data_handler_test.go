@@ -133,6 +133,72 @@ func TestMonitoringDataHandler_JobStatus_NotFound(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
+// GET /v1/monitoring/data — HTTP route registration check.
+func TestMonitoringDataHandler_List_HTTP(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	q := services.NewQueueService(10, 1)
+	defer q.Shutdown()
+	h := NewMonitoringDataHandler(nil, q)
+	r := gin.New()
+	r.Use(gin.Recovery())
+	r.GET("/v1/monitoring/data", func(c *gin.Context) {
+		c.Set("user_id", uint(1))
+		c.Set("role", "researcher")
+		h.List(c)
+	})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/v1/monitoring/data", nil)
+	r.ServeHTTP(w, req)
+
+	assert.NotEqual(t, http.StatusNotFound, w.Code)
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+// GET /v1/monitoring/export/json — HTTP route registration check.
+func TestMonitoringDataHandler_ExportJSON_HTTP(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	q := services.NewQueueService(10, 1)
+	defer q.Shutdown()
+	h := NewMonitoringDataHandler(nil, q)
+	r := gin.New()
+	r.Use(gin.Recovery())
+	r.GET("/v1/monitoring/export/json", func(c *gin.Context) {
+		c.Set("user_id", uint(1))
+		c.Set("role", "researcher")
+		h.ExportJSON(c)
+	})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/v1/monitoring/export/json", nil)
+	r.ServeHTTP(w, req)
+
+	assert.NotEqual(t, http.StatusNotFound, w.Code)
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+// GET /v1/monitoring/export/csv — HTTP route registration check.
+func TestMonitoringDataHandler_ExportCSV_HTTP(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	q := services.NewQueueService(10, 1)
+	defer q.Shutdown()
+	h := NewMonitoringDataHandler(nil, q)
+	r := gin.New()
+	r.Use(gin.Recovery())
+	r.GET("/v1/monitoring/export/csv", func(c *gin.Context) {
+		c.Set("user_id", uint(1))
+		c.Set("role", "researcher")
+		h.ExportCSV(c)
+	})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/v1/monitoring/export/csv", nil)
+	r.ServeHTTP(w, req)
+
+	assert.NotEqual(t, http.StatusNotFound, w.Code)
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
 func TestMonitoringDataHandler_BatchIngest_Accepted(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	// Use a large buffer so jobs queue but don't get processed by the worker

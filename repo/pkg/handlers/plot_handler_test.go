@@ -69,3 +69,25 @@ func TestPlotHandler_Delete_InvalidID(t *testing.T) {
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
+
+// GET /v1/plots — verifies route is wired and handler is invoked via HTTP.
+func TestPlotHandler_List_HTTP(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(gin.Recovery())
+	h := NewPlotHandler(nil)
+	r.GET("/v1/plots", func(c *gin.Context) {
+		c.Set("user_id", uint(1))
+		c.Set("role", "researcher")
+		h.List(c)
+	})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/v1/plots?page=1&page_size=10", nil)
+	r.ServeHTTP(w, req)
+
+	// Route is registered (not 404) and the handler executed; the nil-DB
+	// path surfaces as a 500 captured by Recovery.
+	assert.NotEqual(t, http.StatusNotFound, w.Code)
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}

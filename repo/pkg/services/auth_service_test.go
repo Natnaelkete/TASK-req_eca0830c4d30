@@ -93,6 +93,25 @@ func TestNewAuthService(t *testing.T) {
 	assert.Equal(t, []byte("secret"), svc.jwtSecret)
 }
 
+func TestIsPublicRegistrationRole(t *testing.T) {
+	// Allowed for public self-registration.
+	assert.True(t, IsPublicRegistrationRole("researcher"))
+	assert.True(t, IsPublicRegistrationRole("viewer"))
+
+	// Elevated roles must never be self-assignable from the public
+	// registration endpoint (regression guard for the privilege-escalation
+	// defect called out in the audit).
+	assert.False(t, IsPublicRegistrationRole("admin"))
+	assert.False(t, IsPublicRegistrationRole("reviewer"))
+	assert.False(t, IsPublicRegistrationRole("customer_service"))
+	assert.False(t, IsPublicRegistrationRole(""))
+	assert.False(t, IsPublicRegistrationRole("superadmin"))
+}
+
+func TestErrRoleNotAllowed(t *testing.T) {
+	assert.EqualError(t, ErrRoleNotAllowed, "requested role is not allowed for public registration")
+}
+
 func TestValidatePasswordComplexity(t *testing.T) {
 	tests := []struct {
 		password string

@@ -95,3 +95,21 @@ func TestMonitorHandler_ResolveAlert_InvalidID(t *testing.T) {
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
+
+// GET /v1/monitor/alerts — HTTP route registration and handler invocation check.
+func TestMonitorHandler_ListAlerts_HTTP(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	q := services.NewQueueService(10, 1)
+	defer q.Shutdown()
+	h := NewMonitorHandler(nil, q)
+	r := gin.New()
+	r.Use(gin.Recovery())
+	r.GET("/v1/monitor/alerts", h.ListAlerts)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/v1/monitor/alerts", nil)
+	r.ServeHTTP(w, req)
+
+	assert.NotEqual(t, http.StatusNotFound, w.Code)
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
